@@ -10,9 +10,9 @@ from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
 import asyncio
 
-# --- 🔧 Настройки ---
-API_ID = '24958701'
-API_HASH = 'ccb1219ebb53974201d1189df3726670'
+# --- 🔧 Настройки (теперь из переменных окружения) ---
+API_ID = os.getenv('API_ID')
+API_HASH = os.getenv('API_HASH')
 SESSION_NAME = 'gigachat_telegram_reposter'
 
 SOURCE_CHANNEL_ENTITIES = [
@@ -21,11 +21,11 @@ SOURCE_CHANNEL_ENTITIES = [
 ]
 MAX_MESSAGES_TO_CHECK = 20
 
-BOT_TOKEN = '5622016241:AAEpdsE0mAMRVvBbONv2zRKzo_HzvTg62gI'
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'
+YOUR_TG_LINK = 'https://t.me/mazemc'  # ⚠️ пробел в конце УДАЛЁН!
 
-API_KEY = "MDE5YTJiMWEtOWJkNy03MjFiLWE3YmYtMzU2MGEwOGFhOTk4OjQyYWEyNzIxLTM4N2ItNGJhOC05MjM4LWMxNjA5OWIyNDgwMg=="
+API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
 
 GIGACHAT_PROMPT_TEMPLATE = """
@@ -178,14 +178,19 @@ async def publish_via_bot(bot_token, channel, text, media_paths, button_text, bu
 
 # --- Основной блок ---
 if __name__ == "__main__":
+    # Проверка наличия всех переменных
+    required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN', 'GIGACHAT_API_KEY']
+    for var in required_vars:
+        if not os.getenv(var):
+            raise EnvironmentError(f"❌ Переменная окружения {var} не задана!")
+
     os.makedirs('downloads', exist_ok=True)
 
     last_processed = load_last_processed()
     print(f"Последние ID по каналам: {last_processed}")
 
-    posts_with_media = []  # сюда будем сохранять (entity, msg_id, text, media_path)
+    posts_with_media = []
 
-    # Сбор постов И СКАЧИВАНИЕ МЕДИА в одном контексте
     with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
         for entity in SOURCE_CHANNEL_ENTITIES:
             last_id = last_processed.get(entity, 0)
@@ -200,7 +205,6 @@ if __name__ == "__main__":
                     if not original_text:
                         continue
 
-                    # Скачиваем медиа СРАЗУ, пока клиент подключён
                     media_path = None
                     if msg.media:
                         try:
@@ -209,7 +213,7 @@ if __name__ == "__main__":
                                 file=f"downloads/{msg.id}_media"
                             )
                             if path and os.path.exists(path):
-                                if os.path.getsize(path) <= 10 * 1024 * 1024:  # ≤10 МБ
+                                if os.path.getsize(path) <= 10 * 1024 * 1024:
                                     media_path = path
                                     print(f"✅ Медиа сохранено: {path}")
                                 else:
@@ -232,12 +236,9 @@ if __name__ == "__main__":
         print("❌ Нет новых постов для публикации.")
         exit()
 
-    # Сортируем по ID (от старых к новым)
     posts_with_media.sort(key=lambda x: x['msg_id'])
-
     new_max_ids = {}
 
-    # Публикация
     for item in posts_with_media:
         entity = item['entity']
         msg_id = item['msg_id']
@@ -259,7 +260,7 @@ if __name__ == "__main__":
                 print(f"⚠️ GigaChat ошибка: {e}")
                 hashtags = "#товар"
 
-            base_url = f"https://t.me/{entity}"
+            base_url = f"https://t.me/{entity}"  # исправлено: убран пробел
             if isinstance(price_for_message, int):
                 pre_text = f"хочу заказать товар из поста в {base_url}\n{hashtags} за {price_for_message}р"
             else:
@@ -281,7 +282,6 @@ if __name__ == "__main__":
             print(f"❌ Ошибка публикации {msg_id}: {e}")
             mark_post_as_failed(entity, msg_id)
 
-    # Сохраняем прогресс
     for entity, max_id in new_max_ids.items():
         save_last_processed(entity, max_id)
 
