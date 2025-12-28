@@ -1,7 +1,9 @@
-name: Telegram Reposter (Manual)
+name: Telegram Reposter
 
 on:
-  workflow_dispatch:  # Только ручной запуск через кнопку
+  schedule:
+    - cron: '0 6,11,16 * * *'  # UTC: 6, 11, 16 → Москва: 9, 14, 19
+  workflow_dispatch:  # ручной запуск остаётся
 
 jobs:
   repost:
@@ -16,10 +18,9 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install telethon python-telegram-bot urllib3
+        run: pip install telethon python-telegram-bot urllib3
 
-      - name: Restore last_processed.json (if exists)
+      - name: Restore last_processed.json
         uses: actions/cache@v4
         id: cache-last-processed
         with:
