@@ -18,7 +18,7 @@ SESSION_NAME = 'gigachat_telegram_reposter'
 SOURCE_CHANNEL_ENTITIES = [
     'brand_shop_usa',
     'brand_shop_in_russia',
-    'shoppogolikhm'  # ← ДОБАВЛЕН НОВЫЙ КАНАЛ
+    'Shoppogolik_USA'  # ← ДОБАВЛЕН НОВЫЙ КАНАЛ
 ]
 MAX_MESSAGES_TO_CHECK = 20
 
