@@ -17,13 +17,14 @@ SESSION_NAME = 'gigachat_telegram_reposter'
 
 SOURCE_CHANNEL_ENTITIES = [
     'brand_shop_usa',
-    'brand_shop_in_russia'
+    'brand_shop_in_russia',
+    'shoppogolikhm'  # ← ДОБАВЛЕН НОВЫЙ КАНАЛ
 ]
 MAX_MESSAGES_TO_CHECK = 20
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'  # ⚠️ пробел в конце УДАЛЁН!
+YOUR_TG_LINK = 'https://t.me/mazemc'  # ✅ пробел в конце УДАЛЁН
 
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
@@ -260,7 +261,7 @@ if __name__ == "__main__":
                 print(f"⚠️ GigaChat ошибка: {e}")
                 hashtags = "#товар"
 
-            base_url = f"https://t.me/{entity}"  # исправлено: убран пробел
+            base_url = f"https://t.me/{entity}"  # ✅ Исправлено: убраны пробелы
             if isinstance(price_for_message, int):
                 pre_text = f"хочу заказать товар из поста в {base_url}\n{hashtags} за {price_for_message}р"
             else:
