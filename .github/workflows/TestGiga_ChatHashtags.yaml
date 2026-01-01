@@ -22,7 +22,8 @@ jobs:
         env:
           GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
         run: |
-          python3 << 'EOF'
+          # Создаём временный Python-файл
+          cat > test_gigachat.py << 'EOF'
           import os
           import base64
           import json
@@ -31,11 +32,11 @@ jobs:
           import time
 
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
           API_KEY = os.getenv('GIGACHAT_API_KEY')
           if not API_KEY:
               raise Exception("❌ GIGACHAT_API_KEY не задан")
 
-          # --- Получение токена ---
           def get_token():
               decoded = base64.b64decode(API_KEY.strip()).decode("utf-8")
               client_id, client_secret = decoded.split(":", 1)
@@ -60,7 +61,6 @@ jobs:
               else:
                   raise Exception(f"❌ Ошибка токена: {resp.status} {resp.data.decode()}")
 
-          # --- Вызов GigaChat ---
           def call_gigachat(token, text):
               url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
               headers = {
@@ -109,3 +109,6 @@ jobs:
           hashtags = call_gigachat(token, test_text)
           print(f"\n🏁 Итоговый результат: {hashtags}")
           EOF
+
+          # Запускаем Python-скрипт
+          python3 test_gigachat.py
