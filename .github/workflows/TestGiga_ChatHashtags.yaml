@@ -1,7 +1,9 @@
 name: 🧪 Test GigaChat Hashtags
 
 on:
-  workflow_dispatch:  # только ручной запуск
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -18,18 +20,14 @@ jobs:
       - name: Install dependencies
         run: pip install urllib3
 
-      - name: Test GigaChat
-        env:
-          GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
+      - name: Create test script
         run: |
-          # Создаём временный Python-файл
           cat > test_gigachat.py << 'EOF'
           import os
           import base64
           import json
           import uuid
           import urllib3
-          import time
 
           urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -103,12 +101,11 @@ jobs:
                   return "#товар"
 
           # --- Тест с реальным текстом из вашего канала ---
-          test_text = "Karl lagerfeld 😎 🐱 13300Р+ 🚚"
+          test_text = "VALENTINO BAGS\nСумка женская, красная, кожа, цена 16400₽"
           print(f"Тестируем текст: {test_text}")
           token = get_token()
           hashtags = call_gigachat(token, test_text)
           print(f"\n🏁 Итоговый результат: {hashtags}")
           EOF
 
-          # Запускаем Python-скрипт
           python3 test_gigachat.py
