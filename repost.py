@@ -271,126 +271,132 @@ if __name__ == "__main__":
 
     os.makedirs('downloads', exist_ok=True)
 
-    # Загружаем состояние
-    last_processed = load_last_processed()
-    print(f"Последние ID по каналам: {last_processed}")
+    # НОВОЕ: режим "только факт-пост"
+    only_brand_fact = os.getenv('ONLY_BRAND_FACT') == '1'
 
-    # Проверяем режимы
-    force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
-    if force_full_repost:
-        print("🔄 Принудительный режим: перечитываем последние посты (но избегаем дублей)")
-
-    posts_with_media = []
-
-    with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-        for entity in SOURCE_CHANNEL_ENTITIES:
-            last_id = last_processed.get(entity, 0)
-
-            if force_full_repost:
-                print(f"🔄 Запрашиваю последние {MAX_MESSAGES_TO_CHECK} постов из {entity}")
-                all_messages = list(client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK))
-            else:
-                print(f"🔍 Проверяю {entity}, пропускаю ID ≤ {last_id}")
-                all_messages = []
-                for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK):
-                    if msg.id <= last_id:
-                        break
-                    all_messages.append(msg)
-
-            for msg in all_messages:
-                if not force_full_repost and msg.id <= last_id:
-                    continue
-                if is_post_failed(entity, msg.id):
-                    print(f"⏭️ Пропускаем ранее упавший пост {msg.id} (в failed_posts)")
-                    continue
-
-                original_text = (msg.raw_text or msg.message or msg.text or "").strip()
-                if not original_text:
-                    continue
-
-                media_path = None
-                if msg.media:
-                    try:
-                        path = client.download_media(
-                            msg.media,
-                            file=f"downloads/{msg.id}_media"
-                        )
-                        if path and os.path.exists(path):
-                            if os.path.getsize(path) <= 10 * 1024 * 1024:
-                                media_path = path
-                                print(f"✅ Медиа сохранено: {path}")
-                            else:
-                                print(f"⏭️ Медиа >10 МБ — пропускаем (ID: {msg.id})")
-                    except Exception as e:
-                        print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
-
-                posts_with_media.append({
-                    'entity': entity,
-                    'msg_id': msg.id,
-                    'text': original_text,
-                    'media_path': media_path
-                })
-                print(f"✅ Найден пост {msg.id} в {entity}")
-
-    if posts_with_media:
-        posts_with_media.sort(key=lambda x: x['msg_id'])
-        new_max_ids = {}
-
-        for item in posts_with_media:
-            entity = item['entity']
-            msg_id = item['msg_id']
-            text = item['text']
-            media_path = item['media_path']
-
-            print(f"\n🔄 Публикую пост {msg_id} из {entity}")
-            try:
-                cleaned_text = remove_contacts(text)
-                extracted_price = extract_and_increase_price(cleaned_text)
-                button_text = f"Заказать за {extracted_price} >>" if extracted_price else "Заказать >>"
-                price_for_message = extracted_price if extracted_price else "не указана"
-
-                try:
-                    hashtags = call_gigachat_for_hashtags(cleaned_text)
-                    if not hashtags.strip():
-                        hashtags = "#товар"
-                except Exception as e:
-                    print(f"⚠️ GigaChat ошибка: {e}")
-                    hashtags = "#товар"
-
-                short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                post_ref = f"{short_code}-{msg_id}"
-
-                if isinstance(price_for_message, int):
-                    pre_text = f"хочу заказать товар {post_ref}\n{hashtags} за {price_for_message}р"
-                else:
-                    pre_text = f"хочу заказать товар {post_ref}\n{hashtags}"
-
-                encoded_text = urllib.parse.quote(pre_text)
-                button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
-
-                media_paths = [media_path] if media_path else []
-
-                asyncio.run(publish_via_bot(
-                    BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url
-                ))
-                print(f"✅ Успешно опубликован пост {msg_id}")
-
-                if entity not in new_max_ids or msg_id > new_max_ids[entity]:
-                    new_max_ids[entity] = msg_id
-
-            except Exception as e:
-                print(f"❌ Ошибка публикации {msg_id}: {e}")
-                mark_post_as_failed(entity, msg_id)
-
-        for entity, max_id in new_max_ids.items():
-            save_last_processed(entity, max_id)
-
-        print(f"\n✅ Всего опубликовано постов: {len(posts_with_media)}")
+    if only_brand_fact:
+        print("🎯 Режим: ТОЛЬКО факт-пост. Пропускаем проверку источников.")
+        posts_with_media = []
     else:
-        print("❌ Нет новых постов для публикации.")
+        # СТАНДАРТНАЯ ЛОГИКА: обработка источников
+        last_processed = load_last_processed()
+        print(f"Последние ID по каналам: {last_processed}")
 
-    # --- Факт-посты: БЕЗ Telethon внутри asyncio.run ---
-    force_fact = os.getenv('FORCE_BRAND_FACT') == '1'
+        force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
+        if force_full_repost:
+            print("🔄 Принудительный режим: перечитываем последние посты")
+
+        posts_with_media = []
+        with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+            for entity in SOURCE_CHANNEL_ENTITIES:
+                last_id = last_processed.get(entity, 0)
+
+                if force_full_repost:
+                    print(f"🔄 Запрашиваю последние {MAX_MESSAGES_TO_CHECK} постов из {entity}")
+                    all_messages = list(client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK))
+                else:
+                    print(f"🔍 Проверяю {entity}, пропускаю ID ≤ {last_id}")
+                    all_messages = []
+                    for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK):
+                        if msg.id <= last_id:
+                            break
+                        all_messages.append(msg)
+
+                for msg in all_messages:
+                    if not force_full_repost and msg.id <= last_id:
+                        continue
+                    if is_post_failed(entity, msg.id):
+                        print(f"⏭️ Пропускаем ранее упавший пост {msg.id}")
+                        continue
+
+                    original_text = (msg.raw_text or msg.message or msg.text or "").strip()
+                    if not original_text:
+                        continue
+
+                    media_path = None
+                    if msg.media:
+                        try:
+                            path = client.download_media(
+                                msg.media,
+                                file=f"downloads/{msg.id}_media"
+                            )
+                            if path and os.path.exists(path):
+                                if os.path.getsize(path) <= 10 * 1024 * 1024:
+                                    media_path = path
+                                    print(f"✅ Медиа сохранено: {path}")
+                                else:
+                                    print(f"⏭️ Медиа >10 МБ — пропускаем (ID: {msg.id})")
+                        except Exception as e:
+                            print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
+
+                    posts_with_media.append({
+                        'entity': entity,
+                        'msg_id': msg.id,
+                        'text': original_text,
+                        'media_path': media_path
+                    })
+                    print(f"✅ Найден пост {msg.id} в {entity}")
+
+        # Публикация товарных постов
+        if posts_with_media:
+            posts_with_media.sort(key=lambda x: x['msg_id'])
+            new_max_ids = {}
+
+            for item in posts_with_media:
+                entity = item['entity']
+                msg_id = item['msg_id']
+                text = item['text']
+                media_path = item['media_path']
+
+                print(f"\n🔄 Публикую пост {msg_id} из {entity}")
+                try:
+                    cleaned_text = remove_contacts(text)
+                    extracted_price = extract_and_increase_price(cleaned_text)
+                    button_text = f"Заказать за {extracted_price} >>" if extracted_price else "Заказать >>"
+                    price_for_message = extracted_price if extracted_price else "не указана"
+
+                    try:
+                        hashtags = call_gigachat_for_hashtags(cleaned_text)
+                        if not hashtags.strip():
+                            hashtags = "#товар"
+                    except Exception as e:
+                        print(f"⚠️ GigaChat ошибка: {e}")
+                        hashtags = "#товар"
+
+                    short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
+                    post_ref = f"{short_code}-{msg_id}"
+
+                    if isinstance(price_for_message, int):
+                        pre_text = f"хочу заказать товар {post_ref}\n{hashtags} за {price_for_message}р"
+                    else:
+                        pre_text = f"хочу заказать товар {post_ref}\n{hashtags}"
+
+                    encoded_text = urllib.parse.quote(pre_text)
+                    button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
+
+                    media_paths = [media_path] if media_path else []
+
+                    asyncio.run(publish_via_bot(
+                        BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url
+                    ))
+                    print(f"✅ Успешно опубликован пост {msg_id}")
+
+                    if entity not in new_max_ids or msg_id > new_max_ids[entity]:
+                        new_max_ids[entity] = msg_id
+
+                except Exception as e:
+                    print(f"❌ Ошибка публикации {msg_id}: {e}")
+                    mark_post_as_failed(entity, msg_id)
+
+            for entity, max_id in new_max_ids.items():
+                save_last_processed(entity, max_id)
+
+            print(f"\n✅ Всего опубликовано постов: {len(posts_with_media)}")
+        else:
+            print("❌ Нет новых постов для публикации.")
+
+    # --- Факт-посты ---
+    force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
     last_fact_date = get_last_brand_fact_date()
     now = datetime.now()
     should_post_fact = (
@@ -409,14 +415,12 @@ if __name__ == "__main__":
             import random
             brand = random.choice(BRAND_FACTS_TOPICS)
 
-            # Генерация факта
             try:
                 fact_text = generate_brand_fact(brand)
             except Exception as e:
                 print(f"⚠️ GigaChat недоступен, используем запасной факт: {e}")
                 fact_text = f"Бренд {brand} — один из самых влиятельных в мире моды. 💫"
 
-            # Поиск фото — ВНЕ asyncio, но внутри отдельного клиента
             try:
                 with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
                     photo_path = find_photo_of_brand_in_target_channel(client, brand)
@@ -426,7 +430,6 @@ if __name__ == "__main__":
             caption = f"✨ {fact_text}\n\n#мода #бренды #{brand.replace(' ', '').lower()} #fact"
             print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
-            # Публикация — ВНЕ with TelegramClient!
             asyncio.run(publish_via_bot(
                 BOT_TOKEN, TARGET_CHANNEL, caption,
                 [photo_path] if photo_path else [],
@@ -434,7 +437,7 @@ if __name__ == "__main__":
                 YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
             ))
 
-            if not force_fact:
+            if not only_brand_fact:
                 set_last_brand_fact_date()
             print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
 
