@@ -5,6 +5,7 @@ import json
 import uuid
 import re
 import os
+import hashlib
 from telethon.sync import TelegramClient
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
@@ -37,9 +38,8 @@ CHANNEL_SHORTCODES = {
     'brand_shop_in_russia': 'br',
 }
 
-# --- Единые хештеги брендов (каноническая форма) ---
+# --- Единые хештеги брендов ---
 BRAND_HASHTAGS = {
-    # American
     'Nike': 'nike',
     'Adidas': 'adidas',
     'Puma': 'puma',
@@ -47,126 +47,26 @@ BRAND_HASHTAGS = {
     'Calvin Klein': 'calvinklein',
     'Ralph Lauren': 'ralphlauren',
     'Levi’s': 'levis',
-    'Gap': 'gap',
-    'Hollister': 'hollister',
-    'Abercrombie & Fitch': 'abercrombie',
-    'Michael Kors': 'michaelkors',
-    'Coach': 'coach',
-    'Kate Spade': 'katespade',
-    'Fossil': 'fossil',
-    'New Balance': 'newbalance',
-    'Converse': 'converse',
-    'Vans': 'vans',
-    'Under Armour': 'underarmour',
-    'Supreme': 'supreme',
-    'The North Face': 'northface',
-    'Columbia': 'columbia',
-    'Timberland': 'timberland',
-    'UGG': 'ugg',
-    'Crocs': 'crocs',
-    'Skechers': 'skechers',
-    'Lululemon': 'lululemon',
-    'Champion': 'champion',
-    'Dickies': 'dickies',
-    'Carhartt': 'carhartt',
-
-    # Italian
     'Gucci': 'gucci',
     'Prada': 'prada',
-    'Versace': 'versace',
-    'Valentino': 'valentino',
-    'Fendi': 'fendi',
-    'Armani': 'armani',
-    'Dolce & Gabbana': 'dolcegabbana',
-    'Moschino': 'moschino',
-    'Missoni': 'missoni',
-    'Salvatore Ferragamo': 'ferragamo',
-    'Bottega Veneta': 'bottegaveneta',
-    'Max Mara': 'maxmara',
-    'Diesel': 'diesel',
-    'Benetton': 'benetton',
-
-    # French
+    'Zara': 'zara',
+    'H&M': 'hm',
     'Louis Vuitton': 'louisvuitton',
     'Chanel': 'chanel',
     'Dior': 'dior',
-    'Hermès': 'hermes',
-    'Lacoste': 'lacoste',
-    'Givenchy': 'givenchy',
-    'Celine': 'celine',
-    'Balenciaga': 'balenciaga',
-    'Saint Laurent': 'saintlaurent',
-
-    # Cosmetics & Perfume
-    'Estée Lauder': 'estee',
     'MAC': 'maccosmetics',
-    'Lancôme': 'lancome',
-    'Clinique': 'clinique',
-    'Chanel Beauty': 'chanelbeauty',
-    'Dior Beauty': 'diorbeauty',
-    'YSL Beauty': 'yslbeauty',
-    'NARS': 'nars',
-    'Bobbi Brown': 'bobbibrown',
-    'Too Faced': 'toofaced',
-    'Urban Decay': 'urbandecay',
-    'Kiehl’s': 'kiehls',
-    'La Mer': 'lamer',
-    'Shiseido': 'shiseido',
-    'SK-II': 'skii',
-    'The Ordinary': 'theordinary',
-    'Drunk Elephant': 'drunkelephant',
-    'Glossier': 'glossier',
-    'Fenty Beauty': 'fentybeauty',
-    'Charlotte Tilbury': 'charlottetilbury',
-
-    # Others
-    'Zara': 'zara',
-    'H&M': 'hm',
-    'Uniqlo': 'uniqlo',
-    'Bershka': 'bershka',
-    'Pull & Bear': 'pullandbear',
-    'Mango': 'mango',
-    'Massimo Dutti': 'massimodutti',
-    'Oysho': 'oysho',
-    'Swarovski': 'swarovski',
-    'Ray-Ban': 'rayban',
-    'Oakley': 'oakley',
-    'Apple': 'apple',
-    'Samsung': 'samsung',
+    'The North Face': 'northface',
 }
 
-# --- Все возможные варианты написания названия бренда (для поиска) ---
 BRAND_SEARCH_TERMS = {
-    'Nike': ['nike', 'найк', 'найки'],
-    'Adidas': ['adidas', 'адидас', 'адидасы'],
-    'Puma': ['puma', 'пума', 'пумы'],
-    'Tommy Hilfiger': ['tommy hilfiger', 'томми хилфигер', 'томми'],
-    'Calvin Klein': ['calvin klein', 'кальвин кляйн', 'кальвин', 'клайн'],
-    'Ralph Lauren': ['ralph lauren', 'ральф лорен', 'поло', 'polo'],
-    'Levi’s': ['levi', 'levi\'s', 'levi’s', 'левайс', 'ливайс'],
-    'Gucci': ['gucci', 'гуччи', 'гучи'],
-    'Prada': ['prada', 'прада'],
-    'Zara': ['zara', 'зара'],
-    'H&M': ['h&m', 'hm', 'эйч энд эм', 'эйч эм'],
-    'Louis Vuitton': ['louis vuitton', 'louis', 'vuitton', 'луи виттон', 'луи', 'виттон'],
-    'Chanel': ['chanel', 'шанель'],
-    'Dior': ['dior', 'диор'],
-    'MAC': ['mac', 'мак', 'маккосметикс'],
-    'Fendi': ['fendi', 'фенди'],
-    'Versace': ['versace', 'версаче'],
-    'Armani': ['armani', 'армани'],
-    'The North Face': ['north face', 'the north face', 'норт фейс'],
-    'Converse': ['converse', 'конверс'],
-    'Vans': ['vans', 'ванс'],
-    'Supreme': ['supreme', 'суприм', 'суприме'],
-    'Estée Lauder': ['estee lauder', 'estee', 'эстее лодер', 'эстей'],
-    'Lancôme': ['lancome', 'ланком', 'ланкоме'],
-    'Shiseido': ['shiseido', 'шизеидо'],
-    'Samsung': ['samsung', 'самсунг'],
-    'Apple': ['apple', 'эпл', 'айфон', 'мак', 'mac'],
+    'Nike': ['nike', 'найк'],
+    'Adidas': ['adidas', 'адидас'],
+    'Tommy Hilfiger': ['tommy hilfiger', 'томми хилфигер'],
+    'Calvin Klein': ['calvin klein', 'кальвин кляйн'],
+    'Levi’s': ['levi', 'левайс'],
+    'Gucci': ['gucci', 'гуччи'],
 }
 
-# --- Настройки факт-постов ---
 BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
@@ -176,19 +76,19 @@ GIGACHAT_PROMPT_TEMPLATE = f"""
 Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
 Формат: только хештеги через пробел, начиная с решётки.
 Обязательно включи:
-- Название бренда — используй ТОЛЬКО эти хештеги: {' '.join(f'#{v}' for v in BRAND_HASHTAGS.values())}.
-- Категорию товара (если в тексте "сумка" или "рюкзак", то #сумка).
-- Статус товара (#в_наличии, если в тексте "В НАЛИЧИИ", #доставка, в остальных случаях, если про то что товар "в наличии" ничего не сообщено).
-- Не добавляй пояснения, только хештеги.
-- Не используй хештеги про видео, YouTube, личные истории.
-- Игнорируй посты, если там не объявление с товаром.
+- Название бренда — используй ТОЛЬКО: {' '.join(f'#{v}' for v in BRAND_HASHTAGS.values())}.
+- Категорию товара (если "сумка" → #сумка).
+- Статус (#в_наличии если "В НАЛИЧИИ", иначе #доставка).
+- Никаких пояснений, только хештеги.
+- Игнорируй посты без товара.
 
-Текст описания товара:
+Текст:
 {{text}}
 """
 
 LAST_PROCESSED_FILE = 'last_processed.json'
 FAILED_POSTS_FILE = 'failed_posts.txt'
+PUBLISHED_SOURCE_POSTS_FILE = 'published_source_posts.txt'
 
 _access_token = None
 _token_expires_at = 0
@@ -211,6 +111,19 @@ def save_last_processed(channel, msg_id):
     data[channel] = msg_id
     with open(LAST_PROCESSED_FILE, 'w') as f:
         json.dump(data, f, indent=2)
+
+def load_published_source_posts():
+    if os.path.exists(PUBLISHED_SOURCE_POSTS_FILE):
+        with open(PUBLISHED_SOURCE_POSTS_FILE, 'r') as f:
+            return set(line.strip() for line in f if line.strip())
+    return set()
+
+def is_source_post_published(entity, msg_id):
+    return f"{entity}:{msg_id}" in load_published_source_posts()
+
+def mark_source_post_as_published(entity, msg_id):
+    with open(PUBLISHED_SOURCE_POSTS_FILE, 'a') as f:
+        f.write(f"{entity}:{msg_id}\n")
 
 def is_post_failed(channel, msg_id):
     if os.path.exists(FAILED_POSTS_FILE):
@@ -342,9 +255,7 @@ def remove_contacts(text):
     return cleaned_text
 
 def find_photo_of_brand_in_target_channel(client, brand_name: str):
-    """Ищет фото по любому из возможных названий бренда."""
     try:
-        # Получаем все варианты поиска
         terms = BRAND_SEARCH_TERMS.get(brand_name, [brand_name.lower()])
         for msg in client.iter_messages(TARGET_CHANNEL, limit=50):
             text = (msg.raw_text or "").lower()
@@ -405,7 +316,7 @@ if __name__ == "__main__":
     only_brand_fact = os.getenv('ONLY_BRAND_FACT') == '1'
 
     if only_brand_fact:
-        print("🎯 Режим: ТОЛЬКО факт-пост. Пропускаем проверку источников.")
+        print("🎯 Режим: ТОЛЬКО факт-пост.")
         posts_with_media = []
     else:
         last_processed = load_last_processed()
@@ -413,7 +324,7 @@ if __name__ == "__main__":
 
         force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
         if force_full_repost:
-            print("🔄 Принудительный режим: перечитываем последние посты")
+            print("🔄 Принудительный режим")
 
         posts_with_media = []
         with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
@@ -442,6 +353,11 @@ if __name__ == "__main__":
                     if not original_text:
                         continue
 
+                    # 🔥 ПРОВЕРКА НА ДУБЛЬ ИЗ ИСТОЧНИКА
+                    if is_source_post_published(entity, msg.id):
+                        print(f"⏭️ Пропускаем уже опубликованный пост {msg.id} из {entity}")
+                        continue
+
                     media_path = None
                     if msg.media:
                         try:
@@ -460,12 +376,11 @@ if __name__ == "__main__":
                         'text': original_text,
                         'media_path': media_path
                     })
-                    print(f"✅ Найден пост {msg.id} в {entity}")
+                    print(f"✅ Найден НОВЫЙ пост {msg.id} в {entity}")
 
         # Публикация товарных постов
         if posts_with_media:
             posts_with_media.sort(key=lambda x: x['msg_id'])
-            new_max_ids = {}
             for item in posts_with_media:
                 entity = item['entity']
                 msg_id = item['msg_id']
@@ -505,15 +420,14 @@ if __name__ == "__main__":
                     ))
                     print(f"✅ Успешно опубликован пост {msg_id}")
 
-                    if entity not in new_max_ids or msg_id > new_max_ids[entity]:
-                        new_max_ids[entity] = msg_id
+                    # 🔥 ПОМЕЧАЕМ КАК ОПУБЛИКОВАННЫЙ
+                    mark_source_post_as_published(entity, msg_id)
+                    # Обновляем last_processed для пропуска в будущем
+                    save_last_processed(entity, msg_id)
 
                 except Exception as e:
                     print(f"❌ Ошибка публикации {msg_id}: {e}")
                     mark_post_as_failed(entity, msg_id)
-
-            for entity, max_id in new_max_ids.items():
-                save_last_processed(entity, max_id)
 
             print(f"\n✅ Всего опубликовано постов: {len(posts_with_media)}")
         else:
