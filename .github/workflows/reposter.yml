@@ -3,7 +3,15 @@ name: Telegram Reposter
 on:
   schedule:
     - cron: '0 6,11,16 * * *'  # UTC: 6, 11, 16 → Москва: 9, 14, 19
-  workflow_dispatch:  # ручной запуск остаётся
+  workflow_dispatch:
+    inputs:
+      force_brand_fact:
+        description: 'Опубликовать факт-пост немедленно (игнорирует таймер 3 дней)'
+        type: choice
+        options:
+          - 'Нет'
+          - 'Да'
+        default: 'Нет'
 
 jobs:
   repost:
@@ -20,6 +28,7 @@ jobs:
       - name: Install dependencies
         run: pip install telethon python-telegram-bot urllib3
 
+      # --- Восстанавливаем состояние между запусками ---
       - name: Restore last_processed.json
         uses: actions/cache@v4
         id: cache-last-processed
@@ -28,17 +37,35 @@ jobs:
           key: last-processed-${{ hashFiles('last_processed.json') }}
           restore-keys: last-processed-
 
+      - name: Restore last_brand_fact_post.txt
+        uses: actions/cache@v4
+        id: cache-last-fact
+        with:
+          path: last_brand_fact_post.txt
+          key: last-fact-${{ hashFiles('last_brand_fact_post.txt') }}
+          restore-keys: last-fact-
+
+      # --- Запуск скрипта ---
       - name: Run Reposter
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
+          FORCE_BRAND_FACT: ${{ github.event.inputs.force_brand_fact == 'Да' && '1' || '0' }}
         run: python repost.py
 
+      # --- Сохраняем состояние даже при ошибке ---
       - name: Save last_processed.json
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: last-processed-${{ github.run_id }}
           path: last_processed.json
+
+      - name: Save last_brand_fact_post.txt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-fact-${{ github.run_id }}
+          path: last_brand_fact_post.txt
