@@ -37,24 +37,154 @@ CHANNEL_SHORTCODES = {
     'brand_shop_in_russia': 'br',
 }
 
+# --- Единые хештеги брендов (каноническая форма) ---
+BRAND_HASHTAGS = {
+    # American
+    'Nike': 'nike',
+    'Adidas': 'adidas',
+    'Puma': 'puma',
+    'Tommy Hilfiger': 'tommyhilfiger',
+    'Calvin Klein': 'calvinklein',
+    'Ralph Lauren': 'ralphlauren',
+    'Levi’s': 'levis',
+    'Gap': 'gap',
+    'Hollister': 'hollister',
+    'Abercrombie & Fitch': 'abercrombie',
+    'Michael Kors': 'michaelkors',
+    'Coach': 'coach',
+    'Kate Spade': 'katespade',
+    'Fossil': 'fossil',
+    'New Balance': 'newbalance',
+    'Converse': 'converse',
+    'Vans': 'vans',
+    'Under Armour': 'underarmour',
+    'Supreme': 'supreme',
+    'The North Face': 'northface',
+    'Columbia': 'columbia',
+    'Timberland': 'timberland',
+    'UGG': 'ugg',
+    'Crocs': 'crocs',
+    'Skechers': 'skechers',
+    'Lululemon': 'lululemon',
+    'Champion': 'champion',
+    'Dickies': 'dickies',
+    'Carhartt': 'carhartt',
+
+    # Italian
+    'Gucci': 'gucci',
+    'Prada': 'prada',
+    'Versace': 'versace',
+    'Valentino': 'valentino',
+    'Fendi': 'fendi',
+    'Armani': 'armani',
+    'Dolce & Gabbana': 'dolcegabbana',
+    'Moschino': 'moschino',
+    'Missoni': 'missoni',
+    'Salvatore Ferragamo': 'ferragamo',
+    'Bottega Veneta': 'bottegaveneta',
+    'Max Mara': 'maxmara',
+    'Diesel': 'diesel',
+    'Benetton': 'benetton',
+
+    # French
+    'Louis Vuitton': 'louisvuitton',
+    'Chanel': 'chanel',
+    'Dior': 'dior',
+    'Hermès': 'hermes',
+    'Lacoste': 'lacoste',
+    'Givenchy': 'givenchy',
+    'Celine': 'celine',
+    'Balenciaga': 'balenciaga',
+    'Saint Laurent': 'saintlaurent',
+
+    # Cosmetics & Perfume
+    'Estée Lauder': 'estee',
+    'MAC': 'maccosmetics',
+    'Lancôme': 'lancome',
+    'Clinique': 'clinique',
+    'Chanel Beauty': 'chanelbeauty',
+    'Dior Beauty': 'diorbeauty',
+    'YSL Beauty': 'yslbeauty',
+    'NARS': 'nars',
+    'Bobbi Brown': 'bobbibrown',
+    'Too Faced': 'toofaced',
+    'Urban Decay': 'urbandecay',
+    'Kiehl’s': 'kiehls',
+    'La Mer': 'lamer',
+    'Shiseido': 'shiseido',
+    'SK-II': 'skii',
+    'The Ordinary': 'theordinary',
+    'Drunk Elephant': 'drunkelephant',
+    'Glossier': 'glossier',
+    'Fenty Beauty': 'fentybeauty',
+    'Charlotte Tilbury': 'charlottetilbury',
+
+    # Others
+    'Zara': 'zara',
+    'H&M': 'hm',
+    'Uniqlo': 'uniqlo',
+    'Bershka': 'bershka',
+    'Pull & Bear': 'pullandbear',
+    'Mango': 'mango',
+    'Massimo Dutti': 'massimodutti',
+    'Oysho': 'oysho',
+    'Swarovski': 'swarovski',
+    'Ray-Ban': 'rayban',
+    'Oakley': 'oakley',
+    'Apple': 'apple',
+    'Samsung': 'samsung',
+}
+
+# --- Все возможные варианты написания названия бренда (для поиска) ---
+BRAND_SEARCH_TERMS = {
+    'Nike': ['nike', 'найк', 'найки'],
+    'Adidas': ['adidas', 'адидас', 'адидасы'],
+    'Puma': ['puma', 'пума', 'пумы'],
+    'Tommy Hilfiger': ['tommy hilfiger', 'томми хилфигер', 'томми'],
+    'Calvin Klein': ['calvin klein', 'кальвин кляйн', 'кальвин', 'клайн'],
+    'Ralph Lauren': ['ralph lauren', 'ральф лорен', 'поло', 'polo'],
+    'Levi’s': ['levi', 'levi\'s', 'levi’s', 'левайс', 'ливайс'],
+    'Gucci': ['gucci', 'гуччи', 'гучи'],
+    'Prada': ['prada', 'прада'],
+    'Zara': ['zara', 'зара'],
+    'H&M': ['h&m', 'hm', 'эйч энд эм', 'эйч эм'],
+    'Louis Vuitton': ['louis vuitton', 'louis', 'vuitton', 'луи виттон', 'луи', 'виттон'],
+    'Chanel': ['chanel', 'шанель'],
+    'Dior': ['dior', 'диор'],
+    'MAC': ['mac', 'мак', 'маккосметикс'],
+    'Fendi': ['fendi', 'фенди'],
+    'Versace': ['versace', 'версаче'],
+    'Armani': ['armani', 'армани'],
+    'The North Face': ['north face', 'the north face', 'норт фейс'],
+    'Converse': ['converse', 'конверс'],
+    'Vans': ['vans', 'ванс'],
+    'Supreme': ['supreme', 'суприм', 'суприме'],
+    'Estée Lauder': ['estee lauder', 'estee', 'эстее лодер', 'эстей'],
+    'Lancôme': ['lancome', 'ланком', 'ланкоме'],
+    'Shiseido': ['shiseido', 'шизеидо'],
+    'Samsung': ['samsung', 'самсунг'],
+    'Apple': ['apple', 'эпл', 'айфон', 'мак', 'mac'],
+}
+
 # --- Настройки факт-постов ---
-BRAND_FACTS_TOPICS = ['Calvin Klein', 'Levi’s', 'Tommy Hilfiger', 'Karl Lagerfeld', 'Ralph Lauren']
+BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
 
-GIGACHAT_PROMPT_TEMPLATE = """
+GIGACHAT_PROMPT_TEMPLATE = f"""
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
 Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
 Формат: только хештеги через пробел, начиная с решётки.
 Обязательно включи:
-- Название бренда (если в тексте "Tommy Hilfiger", то #tommyhilfiger).
+- Название бренда — используй ТОЛЬКО эти хештеги: {' '.join(f'#{v}' for v in BRAND_HASHTAGS.values())}.
 - Категорию товара (если в тексте "сумка" или "рюкзак", то #сумка).
 - Статус товара (#в_наличии, если в тексте "В НАЛИЧИИ", #доставка, в остальных случаях, если про то что товар "в наличии" ничего не сообщено).
 - Не добавляй пояснения, только хештеги.
 - Не используй хештеги про видео, YouTube, личные истории.
+- Игнорируй посты, если там не объявление с товаром.
 
 Текст описания товара:
-{text}
+{{text}}
 """
 
 LAST_PROCESSED_FILE = 'last_processed.json'
@@ -171,7 +301,6 @@ def generate_brand_fact(brand_name: str) -> str:
 - Максимум 2–3 предложения.
 - На русском языке.
 - Не упоминай, что это факт.
-- Название бренда выделяй хештегом и жирным.
 """
     token = get_gigachat_token()
     url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
@@ -213,19 +342,21 @@ def remove_contacts(text):
     return cleaned_text
 
 def find_photo_of_brand_in_target_channel(client, brand_name: str):
-    """Ищет в TARGET_CHANNEL последний пост с упоминанием бренда и возвращает путь к фото."""
+    """Ищет фото по любому из возможных названий бренда."""
     try:
+        # Получаем все варианты поиска
+        terms = BRAND_SEARCH_TERMS.get(brand_name, [brand_name.lower()])
         for msg in client.iter_messages(TARGET_CHANNEL, limit=50):
             text = (msg.raw_text or "").lower()
-            brand_words = [w.lower() for w in re.split(r'\s+', brand_name)]
-            if any(word in text for word in brand_words):
-                if msg.media:
-                    path = client.download_media(
-                        msg.media,
-                        file=f"downloads/fact_{brand_name.replace(' ', '_')}"
-                    )
-                    if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
-                        return path
+            for term in terms:
+                if term in text:
+                    if msg.media:
+                        path = client.download_media(
+                            msg.media,
+                            file=f"downloads/fact_{brand_name.replace(' ', '_')}"
+                        )
+                        if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
+                            return path
     except Exception as e:
         print(f"⚠️ Ошибка поиска фото для бренда {brand_name}: {e}")
     return None
@@ -271,14 +402,12 @@ if __name__ == "__main__":
 
     os.makedirs('downloads', exist_ok=True)
 
-    # НОВОЕ: режим "только факт-пост"
     only_brand_fact = os.getenv('ONLY_BRAND_FACT') == '1'
 
     if only_brand_fact:
         print("🎯 Режим: ТОЛЬКО факт-пост. Пропускаем проверку источников.")
         posts_with_media = []
     else:
-        # СТАНДАРТНАЯ ЛОГИКА: обработка источников
         last_processed = load_last_processed()
         print(f"Последние ID по каналам: {last_processed}")
 
@@ -309,23 +438,19 @@ if __name__ == "__main__":
                         print(f"⏭️ Пропускаем ранее упавший пост {msg.id}")
                         continue
 
-                    original_text = (msg.raw_text or msg.message or msg.text or "").strip()
+                    original_text = (msg.raw_text or "").strip()
                     if not original_text:
                         continue
 
                     media_path = None
                     if msg.media:
                         try:
-                            path = client.download_media(
-                                msg.media,
-                                file=f"downloads/{msg.id}_media"
-                            )
-                            if path and os.path.exists(path):
-                                if os.path.getsize(path) <= 10 * 1024 * 1024:
-                                    media_path = path
-                                    print(f"✅ Медиа сохранено: {path}")
-                                else:
-                                    print(f"⏭️ Медиа >10 МБ — пропускаем (ID: {msg.id})")
+                            path = client.download_media(msg.media, file=f"downloads/{msg.id}_media")
+                            if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
+                                media_path = path
+                                print(f"✅ Медиа сохранено: {path}")
+                            else:
+                                print(f"⏭️ Медиа >10 МБ — пропускаем (ID: {msg.id})")
                         except Exception as e:
                             print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
 
@@ -341,7 +466,6 @@ if __name__ == "__main__":
         if posts_with_media:
             posts_with_media.sort(key=lambda x: x['msg_id'])
             new_max_ids = {}
-
             for item in posts_with_media:
                 entity = item['entity']
                 msg_id = item['msg_id']
@@ -427,7 +551,8 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"⚠️ Не удалось найти фото для {brand}: {e}")
 
-            caption = f"✨ {fact_text}\n\n#мода #бренды #{brand.replace(' ', '').lower()} #fact"
+            brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and'))
+            caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
             print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
             asyncio.run(publish_via_bot(
