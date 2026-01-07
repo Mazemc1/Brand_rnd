@@ -298,10 +298,8 @@ if __name__ == "__main__":
                     all_messages.append(msg)
 
             for msg in all_messages:
-                # Пропускаем, если уже обработан и не в режиме forced
                 if not force_full_repost and msg.id <= last_id:
                     continue
-                # Пропускаем, если в списке проваленных (чтобы не зациклиться)
                 if is_post_failed(entity, msg.id):
                     print(f"⏭️ Пропускаем ранее упавший пост {msg.id} (в failed_posts)")
                     continue
@@ -391,7 +389,7 @@ if __name__ == "__main__":
     else:
         print("❌ Нет новых постов для публикации.")
 
-    # --- Факт-посты ---
+    # --- Факт-посты: БЕЗ Telethon внутри asyncio.run ---
     force_fact = os.getenv('FORCE_BRAND_FACT') == '1'
     last_fact_date = get_last_brand_fact_date()
     now = datetime.now()
@@ -403,27 +401,42 @@ if __name__ == "__main__":
 
     if should_post_fact:
         print("🔄 Планируется публикация факт-поста о бренде...")
+        photo_path = None
+        fact_text = ""
+        brand = ""
+
         try:
-            with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-                import random
-                brand = random.choice(BRAND_FACTS_TOPICS)
+            import random
+            brand = random.choice(BRAND_FACTS_TOPICS)
 
+            # Генерация факта
+            try:
                 fact_text = generate_brand_fact(brand)
-                print(f"📝 Сгенерирован факт: {fact_text}")
+            except Exception as e:
+                print(f"⚠️ GigaChat недоступен, используем запасной факт: {e}")
+                fact_text = f"Бренд {brand} — один из самых влиятельных в мире моды. 💫"
 
-                photo_path = find_photo_of_brand_in_target_channel(client, brand)
+            # Поиск фото — ВНЕ asyncio, но внутри отдельного клиента
+            try:
+                with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+                    photo_path = find_photo_of_brand_in_target_channel(client, brand)
+            except Exception as e:
+                print(f"⚠️ Не удалось найти фото для {brand}: {e}")
 
-                caption = f"✨ {fact_text}\n\n#мода #бренды #{brand.replace(' ', '').lower()} #fact"
-                asyncio.run(publish_via_bot(
-                    BOT_TOKEN, TARGET_CHANNEL, caption,
-                    [photo_path] if photo_path else [],
-                    "Смотреть товары этого бренда 👀",
-                    YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
-                ))
+            caption = f"✨ {fact_text}\n\n#мода #бренды #{brand.replace(' ', '').lower()} #fact"
+            print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
-                if not force_fact:
-                    set_last_brand_fact_date()
-                print(f"✅ Опубликован факт-пост о бренде: {brand}")
+            # Публикация — ВНЕ with TelegramClient!
+            asyncio.run(publish_via_bot(
+                BOT_TOKEN, TARGET_CHANNEL, caption,
+                [photo_path] if photo_path else [],
+                "Смотреть товары этого бренда 👀",
+                YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
+            ))
+
+            if not force_fact:
+                set_last_brand_fact_date()
+            print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
 
         except Exception as e:
-            print(f"❌ Ошибка публикации факт-поста: {e}")
+            print(f"❌ Критическая ошибка публикации факт-поста: {e}")
