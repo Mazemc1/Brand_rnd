@@ -2,25 +2,25 @@ name: Telegram Reposter
 
 on:
   schedule:
-    - cron: '0 6,11,16 * * *'
+    - cron: '0 6,11,16 * * *'  # UTC → Москва: 9, 14, 19
   workflow_dispatch:
     inputs:
       only_brand_fact:
-        description: 'Опубликовать ТОЛЬКО факт-пост'
+        description: 'Опубликовать ТОЛЬКО факт-пост (игнорировать источники)'
         type: choice
         options:
           - 'Нет'
           - 'Да'
         default: 'Нет'
       force_brand_fact:
-        description: 'Опубликовать факт-пост немедленно'
+        description: 'Опубликовать факт-пост немедленно (в обычном режиме)'
         type: choice
         options:
           - 'Нет'
           - 'Да'
         default: 'Нет'
       force_full_repost:
-        description: 'Перепроверить последние 20 постов'
+        description: 'Перепроверить последние 20 постов в каждом канале'
         type: choice
         options:
           - 'Нет'
@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: pip install telethon python-telegram-bot urllib3
 
-      # Восстановление состояния
+      # === Восстановление состояния между запусками ===
       - name: Restore last_processed.json
         uses: actions/cache@v4
         with:
@@ -71,7 +71,7 @@ jobs:
           key: published-source-posts-${{ hashFiles('published_source_posts.txt') }}
           restore-keys: published-source-posts-
 
-      # Запуск
+      # === Запуск скрипта ===
       - name: Run Reposter
         env:
           API_ID: ${{ secrets.API_ID }}
@@ -83,27 +83,31 @@ jobs:
           FORCE_FULL_REPOST: ${{ github.event.inputs.force_full_repost == 'Да' && '1' || '0' }}
         run: python repost.py
 
-      # Сохранение состояния
+      # === Сохранение состояния (даже при ошибке) ===
       - name: Save last_processed.json
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: last-processed
           path: last_processed.json
 
       - name: Save last_brand_fact_post.txt
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: last-brand-fact
           path: last_brand_fact_post.txt
 
       - name: Save failed_posts.txt
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: failed-posts
           path: failed_posts.txt
 
       - name: Save published_source_posts.txt
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: published-source-posts
           path: published_source_posts.txt
