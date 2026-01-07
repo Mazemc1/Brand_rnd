@@ -5,8 +5,15 @@ on:
     - cron: '0 6,11,16 * * *'  # UTC → Москва: 9, 14, 19
   workflow_dispatch:
     inputs:
+      only_brand_fact:
+        description: 'Опубликовать ТОЛЬКО факт-пост (игнорировать источники и расписание)'
+        type: choice
+        options:
+          - 'Нет'
+          - 'Да'
+        default: 'Нет'
       force_brand_fact:
-        description: 'Опубликовать факт-пост немедленно (игнорирует таймер 3 дней)'
+        description: 'Опубликовать факт-пост немедленно (в обычном режиме)'
         type: choice
         options:
           - 'Нет'
@@ -35,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: pip install telethon python-telegram-bot urllib3
 
-      # Восстановление состояния
+      # Восстановление состояния между запусками
       - name: Restore last_processed.json
         uses: actions/cache@v4
         with:
@@ -50,20 +57,21 @@ jobs:
           key: last-fact-${{ hashFiles('last_brand_fact_post.txt') }}
           restore-keys: last-fact-
 
-      - name: Restore failed_posts.txt (if exists)
+      - name: Restore failed_posts.txt
         uses: actions/cache@v4
         with:
           path: failed_posts.txt
           key: failed-posts-${{ hashFiles('failed_posts.txt') }}
           restore-keys: failed-posts-
 
-      # Запуск
+      # Запуск основного скрипта
       - name: Run Reposter
         env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
+          ONLY_BRAND_FACT: ${{ github.event.inputs.only_brand_fact == 'Да' && '1' || '0' }}
           FORCE_BRAND_FACT: ${{ github.event.inputs.force_brand_fact == 'Да' && '1' || '0' }}
           FORCE_FULL_REPOST: ${{ github.event.inputs.force_full_repost == 'Да' && '1' || '0' }}
         run: python repost.py
