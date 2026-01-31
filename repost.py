@@ -5,12 +5,12 @@ import json
 import uuid
 import re
 import os
-import hashlib
+import asyncio
+from datetime import datetime, timedelta
+
 from telethon.sync import TelegramClient
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
-import asyncio
-from datetime import datetime, timedelta
 
 # --- 🔧 Настройки ---
 API_ID = os.getenv('API_ID')
@@ -26,7 +26,7 @@ MAX_MESSAGES_TO_CHECK = 20
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'
+YOUR_TG_LINK = 'https://t.me/mazemc'  # ← УБРАНЫ ЛИШНИЕ ПРОБЕЛЫ
 
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
@@ -148,7 +148,7 @@ def get_gigachat_token():
     credentials = f"{client_id}:{client_secret}"
     basic_token = base64.b64encode(credentials.encode("ascii")).decode("ascii")
 
-    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"  # ← УБРАНЫ ПРОБЕЛЫ
     body = b"scope=GIGACHAT_API_PERS"
     headers = {
         "Authorization": f"Basic {basic_token}",
@@ -173,7 +173,7 @@ def get_gigachat_token():
 
 def call_gigachat_for_hashtags(text: str) -> str:
     token = get_gigachat_token()
-    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"  # ← УБРАНЫ ПРОБЕЛЫ
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -216,7 +216,7 @@ def generate_brand_fact(brand_name: str) -> str:
 - Не упоминай, что это факт.
 """
     token = get_gigachat_token()
-    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"  # ← УБРАНЫ ПРОБЕЛЫ
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -353,7 +353,6 @@ if __name__ == "__main__":
                     if not original_text:
                         continue
 
-                    # 🔥 ПРОВЕРКА НА ДУБЛЬ ИЗ ИСТОЧНИКА
                     if is_source_post_published(entity, msg.id):
                         print(f"⏭️ Пропускаем уже опубликованный пост {msg.id} из {entity}")
                         continue
@@ -402,16 +401,22 @@ if __name__ == "__main__":
                         print(f"⚠️ GigaChat ошибка: {e}")
                         hashtags = "#товар"
 
+                    # >>>>>>>>>>>>> ОСНОВНОЕ ИЗМЕНЕНИЕ: ФОРМИРОВАНИЕ СЛУЖЕБНОЙ ССЫЛКИ <<<<<<<<<<<<<<<
                     short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    post_ref = f"{short_code}-{msg_id}"
+                    fake_link = f"https://t.me/{short_code}/{msg_id}"
 
+                    order_lines = [
+                        f"хочу заказать товар {short_code}-{msg_id}",
+                        f"Пост: {fake_link}",
+                        hashtags
+                    ]
                     if isinstance(price_for_message, int):
-                        pre_text = f"хочу заказать товар {post_ref}\n{hashtags} за {price_for_message}р"
-                    else:
-                        pre_text = f"хочу заказать товар {post_ref}\n{hashtags}"
+                        order_lines.append(f"Цена: {price_for_message} ₽")
 
+                    pre_text = "\n".join(order_lines)
                     encoded_text = urllib.parse.quote(pre_text)
                     button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
+                    # >>>>>>>>>>>>> КОНЕЦ ИЗМЕНЕНИЯ <<<<<<<<<<<<<<<
 
                     media_paths = [media_path] if media_path else []
 
@@ -420,9 +425,7 @@ if __name__ == "__main__":
                     ))
                     print(f"✅ Успешно опубликован пост {msg_id}")
 
-                    # 🔥 ПОМЕЧАЕМ КАК ОПУБЛИКОВАННЫЙ
                     mark_source_post_as_published(entity, msg_id)
-                    # Обновляем last_processed для пропуска в будущем
                     save_last_processed(entity, msg_id)
 
                 except Exception as e:
