@@ -26,7 +26,7 @@ MAX_MESSAGES_TO_CHECK = 20
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'  # ← УБРАНЫ ЛИШНИЕ ПРОБЕЛЫ
+YOUR_TG_LINK = 'https://t.me/mazemc'
 
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
@@ -38,11 +38,13 @@ CHANNEL_SHORTCODES = {
     'brand_shop_in_russia': 'br',
 }
 
-# --- Единые хештеги брендов ---
+# --- Единые хештеги брендов (главный источник истины) ---
 BRAND_HASHTAGS = {
+    # Классика (уже были)
     'Nike': 'nike',
     'Adidas': 'adidas',
     'Puma': 'puma',
+    'Reebok': 'reebok',
     'Tommy Hilfiger': 'tommyhilfiger',
     'Calvin Klein': 'calvinklein',
     'Ralph Lauren': 'ralphlauren',
@@ -56,20 +58,50 @@ BRAND_HASHTAGS = {
     'Dior': 'dior',
     'MAC': 'maccosmetics',
     'The North Face': 'northface',
-}
 
-BRAND_SEARCH_TERMS = {
-    'Nike': ['nike', 'найк'],
-    'Adidas': ['adidas', 'адидас'],
-    'Tommy Hilfiger': ['tommy hilfiger', 'томми хилфигер'],
-    'Calvin Klein': ['calvin klein', 'кальвин кляйн'],
-    'Levi’s': ['levi', 'левайс'],
-    'Gucci': ['gucci', 'гуччи'],
+    # Новые бренды — США и Италия
+    'Guess': 'guess',
+    'DKNY': 'dkny',
+    'Victoria’s Secret': 'victoriassecret',
+    'Armani': 'armani',
+    'Giorgio Armani': 'armani',          # алиас → тот же хештег
+    'Emporio Armani': 'armani',
+    'Valentino': 'valentino',
+    'Valentino Garavani': 'valentino',   # полное имя → тот же хештег
+    'Karl Lagerfeld': 'karllagerfeld',
+    'Polo Ralph Lauren': 'ralphlauren',  # алиас
+    'Polo': 'ralphlauren',               # часто так называют → к Ralph Lauren
+    'Moschino': 'moschino',              # "Маскино" → правильное написание Moschino
+    'Vikolo': 'vikolo',                  # "Виколо" → транслит Vikolo (если это локальный бренд)
+
+    # Дополнительные популярные бренды США/Италии
+    'Michael Kors': 'michaelkors',
+    'Coach': 'coach',
+    'Fendi': 'fendi',
+    'Versace': 'versace',
+    'Dolce & Gabbana': 'dolcegabbana',
+    'Burberry': 'burberry',
+    'Givenchy': 'givenchy',
+    'Balenciaga': 'balenciaga',
+    'Saint Laurent': 'saintlaurent',
+    'Off-White': 'offwhite',
+    'Supreme': 'supreme',
+    'Abercrombie & Fitch': 'abercrombie',
+    'Hollister': 'hollister',
+    'Gap': 'gap',
+    'Mango': 'mango',
+    'Diesel': 'diesel',
+    'Benetton': 'benetton',
+    'Max Mara': 'maxmara',
+    'Furla': 'furla',
+    'Tod’s': 'tods',
+    'Salvatore Ferragamo': 'ferragamo',
 }
 
 BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
+LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 
 GIGACHAT_PROMPT_TEMPLATE = f"""
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
@@ -137,6 +169,30 @@ def mark_post_as_failed(channel, msg_id):
     with open(FAILED_POSTS_FILE, 'a') as f:
         f.write(f"{channel}:{msg_id}\n")
 
+def save_last_published_brand(brand_name: str):
+    with open(LAST_PUBLISHED_BRAND_FILE, 'w') as f:
+        f.write(brand_name)
+
+def load_last_published_brand() -> str:
+    if os.path.exists(LAST_PUBLISHED_BRAND_FILE):
+        with open(LAST_PUBLISHED_BRAND_FILE, 'r') as f:
+            return f.read().strip()
+    return None
+
+def get_last_brand_fact_date():
+    if os.path.exists(BRAND_FACT_LAST_POST_FILE):
+        with open(BRAND_FACT_LAST_POST_FILE, 'r') as f:
+            date_str = f.read().strip()
+            try:
+                return datetime.fromisoformat(date_str)
+            except:
+                return None
+    return None
+
+def set_last_brand_fact_date():
+    with open(BRAND_FACT_LAST_POST_FILE, 'w') as f:
+        f.write(datetime.now().isoformat())
+
 # --- GigaChat ---
 def get_gigachat_token():
     global _access_token, _token_expires_at
@@ -148,7 +204,7 @@ def get_gigachat_token():
     credentials = f"{client_id}:{client_secret}"
     basic_token = base64.b64encode(credentials.encode("ascii")).decode("ascii")
 
-    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"  # ← УБРАНЫ ПРОБЕЛЫ
+    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     body = b"scope=GIGACHAT_API_PERS"
     headers = {
         "Authorization": f"Basic {basic_token}",
@@ -173,7 +229,7 @@ def get_gigachat_token():
 
 def call_gigachat_for_hashtags(text: str) -> str:
     token = get_gigachat_token()
-    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"  # ← УБРАНЫ ПРОБЕЛЫ
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -216,7 +272,7 @@ def generate_brand_fact(brand_name: str) -> str:
 - Не упоминай, что это факт.
 """
     token = get_gigachat_token()
-    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"  # ← УБРАНЫ ПРОБЕЛЫ
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -253,38 +309,6 @@ def remove_contacts(text):
     cleaned_text = re.sub(contact_pattern, '', text)
     cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
     return cleaned_text
-
-def find_photo_of_brand_in_target_channel(client, brand_name: str):
-    try:
-        terms = BRAND_SEARCH_TERMS.get(brand_name, [brand_name.lower()])
-        for msg in client.iter_messages(TARGET_CHANNEL, limit=50):
-            text = (msg.raw_text or "").lower()
-            for term in terms:
-                if term in text:
-                    if msg.media:
-                        path = client.download_media(
-                            msg.media,
-                            file=f"downloads/fact_{brand_name.replace(' ', '_')}"
-                        )
-                        if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
-                            return path
-    except Exception as e:
-        print(f"⚠️ Ошибка поиска фото для бренда {brand_name}: {e}")
-    return None
-
-def get_last_brand_fact_date():
-    if os.path.exists(BRAND_FACT_LAST_POST_FILE):
-        with open(BRAND_FACT_LAST_POST_FILE, 'r') as f:
-            date_str = f.read().strip()
-            try:
-                return datetime.fromisoformat(date_str)
-            except:
-                return None
-    return None
-
-def set_last_brand_fact_date():
-    with open(BRAND_FACT_LAST_POST_FILE, 'w') as f:
-        f.write(datetime.now().isoformat())
 
 # --- Публикация (только async) ---
 async def publish_via_bot(bot_token, channel, text, media_paths, button_text=None, button_url=None):
@@ -401,13 +425,20 @@ if __name__ == "__main__":
                         print(f"⚠️ GigaChat ошибка: {e}")
                         hashtags = "#товар"
 
-                    # >>>>>>>>>>>>> ОСНОВНОЕ ИЗМЕНЕНИЕ: ФОРМИРОВАНИЕ СЛУЖЕБНОЙ ССЫЛКИ <<<<<<<<<<<<<<<
-                    short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    fake_link = f"https://t.me/{short_code}/{msg_id}"
+                    # Определяем бренд по хештегу и сохраняем
+                    detected_brand = None
+                    for brand, hashtag in BRAND_HASHTAGS.items():
+                        if f"#{hashtag}" in hashtags:
+                            detected_brand = brand
+                            break
+                    if detected_brand:
+                        save_last_published_brand(detected_brand)
+                        print(f"🔖 Сохранён бренд последней публикации: {detected_brand}")
 
+                    # Формируем заказ с коротким ID
+                    short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
                     order_lines = [
                         f"хочу заказать товар {short_code}-{msg_id}",
-                        f"Пост: {fake_link}",
                         hashtags
                     ]
                     if isinstance(price_for_message, int):
@@ -416,7 +447,6 @@ if __name__ == "__main__":
                     pre_text = "\n".join(order_lines)
                     encoded_text = urllib.parse.quote(pre_text)
                     button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
-                    # >>>>>>>>>>>>> КОНЕЦ ИЗМЕНЕНИЯ <<<<<<<<<<<<<<<
 
                     media_paths = [media_path] if media_path else []
 
@@ -436,7 +466,7 @@ if __name__ == "__main__":
         else:
             print("❌ Нет новых постов для публикации.")
 
-    # --- Факт-посты ---
+    # --- Факт-посты (БЕЗ ФОТО) ---
     force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
     last_fact_date = get_last_brand_fact_date()
     now = datetime.now()
@@ -448,40 +478,33 @@ if __name__ == "__main__":
 
     if should_post_fact:
         print("🔄 Планируется публикация факт-поста о бренде...")
-        photo_path = None
-        fact_text = ""
-        brand = ""
-
-        try:
+        
+        brand = load_last_published_brand()
+        if not brand or brand not in BRAND_HASHTAGS:
             import random
             brand = random.choice(BRAND_FACTS_TOPICS)
+            print(f"⚠️ Последний бренд не найден, используем случайный: {brand}")
+        else:
+            print(f"🧠 Факт-пост о бренде: {brand}")
 
-            try:
-                fact_text = generate_brand_fact(brand)
-            except Exception as e:
-                print(f"⚠️ GigaChat недоступен, используем запасной факт: {e}")
-                fact_text = f"Бренд {brand} — один из самых влиятельных в мире моды. 💫"
-
-            try:
-                with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
-                    photo_path = find_photo_of_brand_in_target_channel(client, brand)
-            except Exception as e:
-                print(f"⚠️ Не удалось найти фото для {brand}: {e}")
-
-            brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and'))
-            caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
-            print(f"📤 Публикуем факт-пост: {caption[:60]}...")
-
-            asyncio.run(publish_via_bot(
-                BOT_TOKEN, TARGET_CHANNEL, caption,
-                [photo_path] if photo_path else [],
-                "Смотреть товары этого бренда 👀",
-                YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
-            ))
-
-            if not only_brand_fact:
-                set_last_brand_fact_date()
-            print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
-
+        try:
+            fact_text = generate_brand_fact(brand)
         except Exception as e:
-            print(f"❌ Критическая ошибка публикации факт-поста: {e}")
+            print(f"⚠️ GigaChat недоступен, используем запасной факт: {e}")
+            fact_text = f"Бренд {brand} — один из самых влиятельных в мире моды. 💫"
+
+        brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and').replace('’', ''))
+        caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
+
+        print(f"📤 Публикуем факт-пост: {caption[:60]}...")
+
+        asyncio.run(publish_via_bot(
+            BOT_TOKEN, TARGET_CHANNEL, caption,
+            media_paths=[],  # ← НИКАКИХ ФОТО
+            button_text="Смотреть товары этого бренда 👀",
+            button_url=YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
+        ))
+
+        if not only_brand_fact:
+            set_last_brand_fact_date()
+        print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
