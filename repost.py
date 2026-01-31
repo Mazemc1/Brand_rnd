@@ -40,7 +40,7 @@ CHANNEL_SHORTCODES = {
 
 # --- Единые хештеги брендов (главный источник истины) ---
 BRAND_HASHTAGS = {
-    # Классика (уже были)
+    # Классика
     'Nike': 'nike',
     'Adidas': 'adidas',
     'Puma': 'puma',
@@ -58,23 +58,24 @@ BRAND_HASHTAGS = {
     'Dior': 'dior',
     'MAC': 'maccosmetics',
     'The North Face': 'northface',
+    'Oysho': 'oysho',
 
     # Новые бренды — США и Италия
     'Guess': 'guess',
     'DKNY': 'dkny',
     'Victoria’s Secret': 'victoriassecret',
     'Armani': 'armani',
-    'Giorgio Armani': 'armani',          # алиас → тот же хештег
+    'Giorgio Armani': 'armani',
     'Emporio Armani': 'armani',
     'Valentino': 'valentino',
-    'Valentino Garavani': 'valentino',   # полное имя → тот же хештег
+    'Valentino Garavani': 'valentino',
     'Karl Lagerfeld': 'karllagerfeld',
-    'Polo Ralph Lauren': 'ralphlauren',  # алиас
-    'Polo': 'ralphlauren',               # часто так называют → к Ralph Lauren
-    'Moschino': 'moschino',              # "Маскино" → правильное написание Moschino
-    'Vikolo': 'vikolo',                  # "Виколо" → транслит Vikolo (если это локальный бренд)
+    'Polo Ralph Lauren': 'ralphlauren',
+    'Polo': 'ralphlauren',
+    'Moschino': 'moschino',
+    'Vikolo': 'vikolo',
 
-    # Дополнительные популярные бренды США/Италии
+    # Дополнительные
     'Michael Kors': 'michaelkors',
     'Coach': 'coach',
     'Fendi': 'fendi',
@@ -425,17 +426,26 @@ if __name__ == "__main__":
                         print(f"⚠️ GigaChat ошибка: {e}")
                         hashtags = "#товар"
 
-                    # Определяем бренд по хештегу и сохраняем
+                    # === ОПРЕДЕЛЕНИЕ БРЕНДА (без сохранения!) ===
                     detected_brand = None
+                    hashtags_lower = hashtags.lower()
+
+                    # 1. По хештегу
                     for brand, hashtag in BRAND_HASHTAGS.items():
-                        if f"#{hashtag}" in hashtags:
+                        if f"#{hashtag}" in hashtags_lower:
                             detected_brand = brand
                             break
-                    if detected_brand:
-                        save_last_published_brand(detected_brand)
-                        print(f"🔖 Сохранён бренд последней публикации: {detected_brand}")
 
-                    # Формируем заказ с коротким ID
+                    # 2. По тексту (если не нашли)
+                    if not detected_brand:
+                        cleaned_text_lower = cleaned_text.lower()
+                        for brand, hashtag in BRAND_HASHTAGS.items():
+                            brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
+                            if brand_clean in cleaned_text_lower:
+                                detected_brand = brand
+                                break
+
+                    # === ФОРМИРОВАНИЕ ЗАКАЗА ===
                     short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
                     order_lines = [
                         f"хочу заказать товар {short_code}-{msg_id}",
@@ -450,10 +460,16 @@ if __name__ == "__main__":
 
                     media_paths = [media_path] if media_path else []
 
+                    # === ПУБЛИКАЦИЯ ===
                     asyncio.run(publish_via_bot(
                         BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url
                     ))
                     print(f"✅ Успешно опубликован пост {msg_id}")
+
+                    # 🔥 СОХРАНЯЕМ БРЕНД ТОЛЬКО ПОСЛЕ УСПЕШНОЙ ПУБЛИКАЦИИ!
+                    if detected_brand:
+                        save_last_published_brand(detected_brand)
+                        print(f"🔖 Сохранён бренд последней публикации: {detected_brand}")
 
                     mark_source_post_as_published(entity, msg_id)
                     save_last_processed(entity, msg_id)
