@@ -237,7 +237,7 @@ def call_gigachat_for_hashtags(text: str) -> str:
         "Accept": "application/json"
     }
     body = {
-        "model": "GigaChat-2-Max",
+        "model": "GigaChat-2", #"GigaChat-2-Max",
         "messages": [
             {"role": "system", "content": "Ты — помощник по созданию хештегов для товаров в Telegram-канале."},
             {"role": "user", "content": GIGACHAT_PROMPT_TEMPLATE.format(text=text)}
@@ -280,7 +280,7 @@ def generate_brand_fact(brand_name: str) -> str:
         "Accept": "application/json"
     }
     body = {
-        "model": "GigaChat-2-Max",
+        "model": "GigaChat-2",#"GigaChat-2-Max",
         "messages": [
             {"role": "user", "content": prompt}
         ],
