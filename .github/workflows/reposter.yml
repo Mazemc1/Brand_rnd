@@ -78,6 +78,8 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}          
+          MAX_CHANNEL_ID: ${{ secrets.MAX_CHANNEL_ID }}        
           ONLY_BRAND_FACT: ${{ github.event.inputs.only_brand_fact == 'Да' && '1' || '0' }}
           FORCE_BRAND_FACT: ${{ github.event.inputs.force_brand_fact == 'Да' && '1' || '0' }}
           FORCE_FULL_REPOST: ${{ github.event.inputs.force_full_repost == 'Да' && '1' || '0' }}
