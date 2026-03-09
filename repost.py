@@ -3,6 +3,7 @@ import urllib3
 import base64
 import json
 import uuid
+import requests
 import re
 import os
 import asyncio
