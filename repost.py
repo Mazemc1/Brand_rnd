@@ -96,7 +96,8 @@ BRAND_HASHTAGS = {
 
 BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
-BRAND_FACT_INTERVAL_DAYS = 3LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
+BRAND_FACT_INTERVAL_DAYS = 3
+LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 
 GIGACHAT_PROMPT_TEMPLATE = f"""
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
