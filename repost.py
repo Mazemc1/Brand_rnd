@@ -264,7 +264,7 @@ def call_gigachat_for_hashtags(text: str) -> str:
         "Accept": "application/json"
     }
     body = {
-        "model": "GigaChat-2-Max",
+        "model": "GigaChat-2",
         "messages": [
             {"role": "system", "content": "Ты — помощник по созданию хештегов для товаров в Telegram-канале."},
             {"role": "user", "content": GIGACHAT_PROMPT_TEMPLATE.format(text=text)}
