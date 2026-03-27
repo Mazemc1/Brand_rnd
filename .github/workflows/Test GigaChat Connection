@@ -1,0 +1,23 @@
+name: Test GigaChat Connection
+
+on:
+  workflow_dispatch:  # Запуск вручную
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: pip install requests
+      
+      - name: Run test
+        env:
+          GIGACHAT_API_KEY: ${{ secrets.GIGACHAT_API_KEY }}
+        run: python test_gigachat.py
