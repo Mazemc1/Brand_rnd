@@ -48,7 +48,7 @@ BRAND_HASHTAGS = {
     'Tommy Hilfiger': 'tommyhilfiger',
     'Calvin Klein': 'calvinklein',
     'Ralph Lauren': 'ralphlauren',
-    'Levi's': 'levis',
+    "Levi's": 'levis',  # ← было: 'Levi's'
     'Gucci': 'gucci',
     'Prada': 'prada',
     'Zara': 'zara',
@@ -61,7 +61,7 @@ BRAND_HASHTAGS = {
     'Oysho': 'oysho',
     'Guess': 'guess',
     'DKNY': 'dkny',
-    'Victoria's Secret': 'victoriassecret',
+    "Victoria's Secret": 'victoriassecret',  # ← было: 'Victoria's Secret'
     'Armani': 'armani',
     'Valentino': 'valentino',
     'Karl Lagerfeld': 'karllagerfeld',
@@ -86,7 +86,7 @@ BRAND_HASHTAGS = {
     'Benetton': 'benetton',
     'Max Mara': 'maxmara',
     'Furla': 'furla',
-    'Tod's': 'tods',
+    "Tod's": 'tods',  # ← было: 'Tod's'
     'Salvatore Ferragamo': 'ferragamo',
 }
 
