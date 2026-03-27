@@ -1,5 +1,4 @@
 import time
-import urllib3
 import base64
 import json
 import uuid
@@ -32,6 +31,12 @@ YOUR_TG_LINK = 'https://t.me/mazemc'
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
 
+# --- Модели GigaChat ---
+# Используем GigaChat-Pro для генерации хештегов (качество)
+# и GigaChat-Lite для фактов (скорость + экономия)
+MODEL_HASHTAGS = 'GigaChat-Pro'
+MODEL_FACTS = 'GigaChat-Lite'  # или 'GigaChat-Pro' если нужно больше качества
+
 # --- Сокращения для каналов ---
 CHANNEL_SHORTCODES = {
     'shoppogolikhm': 'sh',
@@ -48,7 +53,7 @@ BRAND_HASHTAGS = {
     'Tommy Hilfiger': 'tommyhilfiger',
     'Calvin Klein': 'calvinklein',
     'Ralph Lauren': 'ralphlauren',
-    "Levi's": 'levis',  # ← было: 'Levi's'
+    "Levi's": 'levis',
     'Gucci': 'gucci',
     'Prada': 'prada',
     'Zara': 'zara',
@@ -61,7 +66,7 @@ BRAND_HASHTAGS = {
     'Oysho': 'oysho',
     'Guess': 'guess',
     'DKNY': 'dkny',
-    "Victoria's Secret": 'victoriassecret',  # ← было: 'Victoria's Secret'
+    "Victoria's Secret": 'victoriassecret',
     'Armani': 'armani',
     'Valentino': 'valentino',
     'Karl Lagerfeld': 'karllagerfeld',
@@ -86,7 +91,7 @@ BRAND_HASHTAGS = {
     'Benetton': 'benetton',
     'Max Mara': 'maxmara',
     'Furla': 'furla',
-    "Tod's": 'tods',  # ← было: 'Tod's'
+    "Tod's": 'tods',
     'Salvatore Ferragamo': 'ferragamo',
 }
 
@@ -95,12 +100,13 @@ BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
 LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 
-GIGACHAT_PROMPT_TEMPLATE = f"""
+# Шаблон промпта для хештегов — используем .format() с {{}} для экранирования
+GIGACHAT_PROMPT_TEMPLATE = """
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
 Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
 Формат: только хештеги через пробел, начиная с решётки.
 Обязательно включи:
-- Название бренда — используй ТОЛЬКО: {' '.join(f'#{v}' for v in BRAND_HASHTAGS.values())}.
+- Название бренда — используй ТОЛЬКО: {allowed_hashtags}.
 - Категорию товара (если "сумка" → #сумка).
 - Статус (#в_наличии если "В НАЛИЧИИ", иначе #доставка).
 - Никаких пояснений, только хештеги.
@@ -108,16 +114,18 @@ GIGACHAT_PROMPT_TEMPLATE = f"""
 
 Текст:
 {{text}}
-"""
+""".format(allowed_hashtags=' '.join(f'#{v}' for v in BRAND_HASHTAGS.values()))
 
 LAST_PROCESSED_FILE = 'last_processed.json'
 FAILED_POSTS_FILE = 'failed_posts.txt'
 PUBLISHED_SOURCE_POSTS_FILE = 'published_source_posts.txt'
 
+# Глобальные переменные для кэширования токена
 _access_token = None
-_token_expires_at = 0
+_token_expires_at = 0  # в секундах (unix timestamp)
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Отключаем предупреждения о самоподписанных сертификатах
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
 # --- Вспомогательные функции ---
 def load_last_processed():
@@ -185,74 +193,126 @@ def set_last_brand_fact_date():
     with open(BRAND_FACT_LAST_POST_FILE, 'w') as f:
         f.write(datetime.now().isoformat())
 
-# --- GigaChat ---
+# ==================== GIGACHAT API ====================
+
 def get_gigachat_token():
+    """Получает или возвращает закэшированный токен доступа к GigaChat API"""
     global _access_token, _token_expires_at
-    if _access_token and (time.time() * 1000) < _token_expires_at - 60000:
+    
+    # Если токен есть и не истёк (с запасом 60 секунд)
+    if _access_token and time.time() < _token_expires_at - 60:
         return _access_token
+    
+    try:
+        # Декодируем client_id:client_secret из Base64
+        decoded = base64.b64decode(API_KEY.strip()).decode('utf-8')
+        client_id, client_secret = decoded.split(':', 1)
+        
+        # Формируем Basic Auth заголовок
+        credentials = f"{client_id}:{client_secret}"
+        basic_auth = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
+        
+        # Запрос на получение токена
+        url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+        headers = {
+            'Authorization': f'Basic {basic_auth}',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'RqUID': str(uuid.uuid4()),
+            'Accept': 'application/json'
+        }
+        data = {'scope': 'GIGACHAT_API_PERS'}
+        
+        response = requests.post(
+            url,
+            headers=headers,
+            data=data,
+            verify=False,  # Отключаем проверку SSL для совместимости
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            token_data = response.json()
+            _access_token = token_data['access_token']
+            # expires_at приходит в миллисекундах — конвертируем в секунды
+            _token_expires_at = token_data['expires_at'] / 1000
+            print("✅ Токен GigaChat получен/обновлён")
+            return _access_token
+        else:
+            raise Exception(f"GigaChat OAuth error {response.status_code}: {response.text}")
+            
+    except Exception as e:
+        print(f"❌ Ошибка получения токена GigaChat: {e}")
+        raise
 
-    decoded = base64.b64decode(API_KEY.strip()).decode("utf-8")
-    client_id, client_secret = decoded.split(":", 1)
-    credentials = f"{client_id}:{client_secret}"
-    basic_token = base64.b64encode(credentials.encode("ascii")).decode("ascii")
-
-    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-    body = b"scope=GIGACHAT_API_PERS"
-    headers = {
-        "Authorization": f"Basic {basic_token}",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Content-Length": str(len(body)),
-        "RqUID": str(uuid.uuid4()),
-        "Accept": "application/json",
-        "User-Agent": "Python/3.x"
-    }
-
-    http = urllib3.PoolManager(cert_reqs="CERT_NONE")
-    resp = http.request("POST", url, body=body, headers=headers)
-
-    if resp.status == 200:
-        data = json.loads(resp.data)
-        _access_token = data["access_token"]
-        _token_expires_at = data["expires_at"]
-        print("✅ Новый токен GigaChat получен.")
-        return _access_token
-    else:
-        raise Exception(f"Не удалось получить токен GigaChat: {resp.status} {resp.data.decode()}")
-
-def call_gigachat_for_hashtags(text: str) -> str:
+def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: float = 0.3) -> str:
+    """Универсальная функция вызова GigaChat API"""
     token = get_gigachat_token()
     url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+    
     headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
     }
-    body = {
-        "model": "GigaChat-2",
-        "messages": [
-            {"role": "system", "content": "Ты — помощник по созданию хештегов для товаров в Telegram-канале."},
-            {"role": "user", "content": GIGACHAT_PROMPT_TEMPLATE.format(text=text)}
+    
+    payload = {
+        'model': model,
+        'messages': [
+            {'role': 'user', 'content': prompt}
         ],
-        "temperature": 0.3,
-        "max_tokens": 60
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+        'stream': False
     }
+    
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            verify=False,
+            timeout=60
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result['choices'][0]['message']['content'].strip()
+            return content
+        elif response.status_code == 401:
+            # Токен истёк — сбрасываем кэш и пробуем ещё раз
+            global _access_token
+            _access_token = None
+            return call_gigachat(prompt, model, max_tokens, temperature)
+        else:
+            raise Exception(f"GigaChat API error {response.status_code}: {response.text}")
+            
+    except requests.exceptions.Timeout:
+        raise Exception("Таймаут запроса к GigaChat")
+    except requests.exceptions.ConnectionError:
+        raise Exception("Ошибка подключения к GigaChat")
+    except Exception as e:
+        print(f"❌ Ошибка вызова GigaChat: {e}")
+        raise
 
-    http = urllib3.PoolManager(cert_reqs="CERT_NONE")
-    resp = http.request("POST", url, body=json.dumps(body).encode(), headers=headers)
-
-    if resp.status == 200:
-        result = json.loads(resp.data)
-        raw_response = result["choices"][0]["message"]["content"].strip()
-        hashtags = " ".join(re.findall(r'#\S+', raw_response))
-        return hashtags
-    elif resp.status == 401 and "Token has expired" in resp.data.decode():
-        global _access_token
-        _access_token = None
-        return call_gigachat_for_hashtags(text)
-    else:
-        raise Exception(f"Ошибка вызова GigaChat: {resp.status} {resp.data.decode()}")
+def call_gigachat_for_hashtags(text: str) -> str:
+    """Генерирует хештеги через GigaChat-Pro"""
+    try:
+        prompt = GIGACHAT_PROMPT_TEMPLATE.format(text=text)
+        response = call_gigachat(
+            prompt=prompt,
+            model=MODEL_HASHTAGS,
+            max_tokens=80,
+            temperature=0.2
+        )
+        # Извлекаем только хештеги из ответа
+        hashtags = " ".join(re.findall(r'#\S+', response))
+        return hashtags if hashtags else "#товар"
+    except Exception as e:
+        print(f"⚠️ GigaChat (хештеги) ошибка: {e}")
+        return "#товар"  # Fallback
 
 def generate_brand_fact(brand_name: str) -> str:
+    """Генерирует факт о бренде через GigaChat-Lite"""
     prompt = f"""
 Ты — редактор модного журнала. Напиши один интересный исторический факт о бренде {brand_name}, особенно связанный с Россией или СНГ, если такой есть. 
 Если факта про Россию нет — расскажи об интересном моменте из мировой истории бренда.
@@ -263,31 +323,19 @@ def generate_brand_fact(brand_name: str) -> str:
 - На русском языке.
 - Не упоминай, что это факт.
 """
-    token = get_gigachat_token()
-    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
-    body = {
-        "model": "GigaChat-2-Max",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 100
-    }
+    try:
+        response = call_gigachat(
+            prompt=prompt,
+            model=MODEL_FACTS,
+            max_tokens=120,
+            temperature=0.7
+        )
+        return response.strip()
+    except Exception as e:
+        print(f"⚠️ GigaChat (факты) ошибка: {e}")
+        return f"Бренд {brand_name} — один из самых влиятельных в мире моды. 💫"
 
-    http = urllib3.PoolManager(cert_reqs="CERT_NONE")
-    resp = http.request("POST", url, body=json.dumps(body).encode(), headers=headers)
-
-    if resp.status == 200:
-        result = json.loads(resp.data)
-        text = result["choices"][0]["message"]["content"].strip()
-        return text
-    else:
-        raise Exception(f"Ошибка генерации факта: {resp.status} {resp.data.decode()}")
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 def extract_and_increase_price(text):
     match = re.search(r'(\d{3,})\s*₽?', text)
@@ -409,13 +457,8 @@ if __name__ == "__main__":
                     button_text = f"Заказать за {extracted_price} >>" if extracted_price else "Заказать >>"
                     price_for_message = extracted_price if extracted_price else "не указана"
 
-                    try:
-                        hashtags = call_gigachat_for_hashtags(cleaned_text)
-                        if not hashtags.strip():
-                            hashtags = "#товар"
-                    except Exception as e:
-                        print(f"⚠️ GigaChat ошибка: {e}")
-                        hashtags = "#товар"
+                    # Генерация хештегов
+                    hashtags = call_gigachat_for_hashtags(cleaned_text)
 
                     # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
                     detected_brand = None
@@ -488,11 +531,7 @@ if __name__ == "__main__":
         else:
             print(f"🧠 Факт-пост о бренде: {brand}")
 
-        try:
-            fact_text = generate_brand_fact(brand)
-        except Exception as e:
-            print(f"⚠️ GigaChat недоступен, используем запасной факт: {e}")
-            fact_text = f"Бренд {brand} — один из самых влиятельных в мире моды. 💫"
+        fact_text = generate_brand_fact(brand)
 
         brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and').replace('’', ''))
         caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
