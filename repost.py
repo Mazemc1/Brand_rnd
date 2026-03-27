@@ -7,7 +7,6 @@ import requests
 import re
 import os
 import asyncio
-import requests
 from datetime import datetime, timedelta
 
 from telethon.sync import TelegramClient
@@ -28,15 +27,10 @@ MAX_MESSAGES_TO_CHECK = 20
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'  # ← убраны пробелы
+YOUR_TG_LINK = 'https://t.me/mazemc'
 
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
-
-# --- MAX.ru настройки ---
-MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN')
-MAX_CHANNEL_ID = os.getenv('MAX_CHANNEL_ID')
-USE_MAX = bool(MAX_BOT_TOKEN and MAX_CHANNEL_ID)
 
 # --- Сокращения для каналов ---
 CHANNEL_SHORTCODES = {
@@ -54,7 +48,7 @@ BRAND_HASHTAGS = {
     'Tommy Hilfiger': 'tommyhilfiger',
     'Calvin Klein': 'calvinklein',
     'Ralph Lauren': 'ralphlauren',
-    'Levi’s': 'levis',
+    'Levi's': 'levis',
     'Gucci': 'gucci',
     'Prada': 'prada',
     'Zara': 'zara',
@@ -67,7 +61,7 @@ BRAND_HASHTAGS = {
     'Oysho': 'oysho',
     'Guess': 'guess',
     'DKNY': 'dkny',
-    'Victoria’s Secret': 'victoriassecret',
+    'Victoria's Secret': 'victoriassecret',
     'Armani': 'armani',
     'Valentino': 'valentino',
     'Karl Lagerfeld': 'karllagerfeld',
@@ -92,7 +86,7 @@ BRAND_HASHTAGS = {
     'Benetton': 'benetton',
     'Max Mara': 'maxmara',
     'Furla': 'furla',
-    'Tod’s': 'tods',
+    'Tod's': 'tods',
     'Salvatore Ferragamo': 'ferragamo',
 }
 
@@ -190,36 +184,6 @@ def get_last_brand_fact_date():
 def set_last_brand_fact_date():
     with open(BRAND_FACT_LAST_POST_FILE, 'w') as f:
         f.write(datetime.now().isoformat())
-
-# --- Публикация в MAX.ru ---
-def publish_to_max_channel(max_bot_token, channel_id, text):
-    url = "https://api.max.ru/v1/messages/send"  # ← убраны пробелы
-    headers = {
-        "Authorization": f"Bearer {max_bot_token}",
-        "Content-Type": "application/json; charset=utf-8"
-    }
-    payload = {
-        "chat_id": channel_id,
-        "text": text,
-        "parse_mode": "html"
-    }
-
-    try:
-        response = requests.post(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-            headers=headers,
-            timeout=10
-        )
-        if response.status_code == 200:
-            print("✅ Успешно опубликовано в MAX")
-            return True
-        else:
-            print(f"❌ Ошибка MAX API: {response.status_code} - {response.text}")
-            return False
-    except Exception as e:
-        print(f"⚠️ Исключение при публикации в MAX: {e}")
-        return False
 
 # --- GigaChat ---
 def get_gigachat_token():
@@ -488,11 +452,6 @@ if __name__ == "__main__":
                     ))
                     print(f"✅ Успешно опубликован пост {msg_id}")
 
-                    # === ПУБЛИКАЦИЯ В MAX.RU ===
-                    if USE_MAX:
-                        max_text = f"{hashtags}\n\nЦена: {price_for_message} ₽"
-                        publish_to_max_channel(MAX_BOT_TOKEN, MAX_CHANNEL_ID, max_text)
-
                     # === СОХРАНЕНИЕ СОСТОЯНИЯ ===
                     if detected_brand:
                         save_last_published_brand(detected_brand)
@@ -552,10 +511,6 @@ if __name__ == "__main__":
                 button_url=YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
             ))
             print("✅ Факт-пост опубликован в Telegram")
-
-            # MAX.ru
-            if USE_MAX:
-                publish_to_max_channel(MAX_BOT_TOKEN, MAX_CHANNEL_ID, caption)
 
             if not only_brand_fact:
                 set_last_brand_fact_date()
