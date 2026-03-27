@@ -31,11 +31,11 @@ YOUR_TG_LINK = 'https://t.me/mazemc'
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
 
-# --- Модели GigaChat ---
-# Используем GigaChat-Pro для генерации хештегов (качество)
-# и GigaChat-Lite для фактов (скорость + экономия)
-MODEL_HASHTAGS = 'GigaChat-Pro'
-MODEL_FACTS = 'GigaChat-Lite'  # или 'GigaChat-Pro' если нужно больше качества
+# ==================== МОДЕЛИ GIGACHAT (исправлено по результатам теста) ====================
+# ✅ Доступна: GigaChat-Pro
+# ❌ Недоступны: GigaChat-Lite (404), GigaChat-Max (402 Payment Required)
+MODEL_HASHTAGS = 'GigaChat-Pro'  # Для генерации хештегов
+MODEL_FACTS = 'GigaChat-Pro'     # Для фактов о брендах (только Pro работает)
 
 # --- Сокращения для каналов ---
 CHANNEL_SHORTCODES = {
@@ -100,7 +100,7 @@ BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
 LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 
-# Шаблон промпта для хештегов — используем .format() с {{}} для экранирования
+# Шаблон промпта для хештегов
 GIGACHAT_PROMPT_TEMPLATE = """
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
 Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
@@ -122,9 +122,8 @@ PUBLISHED_SOURCE_POSTS_FILE = 'published_source_posts.txt'
 
 # Глобальные переменные для кэширования токена
 _access_token = None
-_token_expires_at = 0  # в секундах (unix timestamp)
+_token_expires_at = 0
 
-# Отключаем предупреждения о самоподписанных сертификатах
 requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
 # --- Вспомогательные функции ---
@@ -196,23 +195,16 @@ def set_last_brand_fact_date():
 # ==================== GIGACHAT API ====================
 
 def get_gigachat_token():
-    """Получает или возвращает закэшированный токен доступа к GigaChat API"""
     global _access_token, _token_expires_at
-    
-    # Если токен есть и не истёк (с запасом 60 секунд)
     if _access_token and time.time() < _token_expires_at - 60:
         return _access_token
     
     try:
-        # Декодируем client_id:client_secret из Base64
         decoded = base64.b64decode(API_KEY.strip()).decode('utf-8')
         client_id, client_secret = decoded.split(':', 1)
-        
-        # Формируем Basic Auth заголовок
         credentials = f"{client_id}:{client_secret}"
         basic_auth = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
         
-        # Запрос на получение токена
         url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
         headers = {
             'Authorization': f'Basic {basic_auth}',
@@ -222,30 +214,21 @@ def get_gigachat_token():
         }
         data = {'scope': 'GIGACHAT_API_PERS'}
         
-        response = requests.post(
-            url,
-            headers=headers,
-            data=data,
-            verify=False,  # Отключаем проверку SSL для совместимости
-            timeout=30
-        )
+        response = requests.post(url, headers=headers, data=data, verify=False, timeout=30)
         
         if response.status_code == 200:
             token_data = response.json()
             _access_token = token_data['access_token']
-            # expires_at приходит в миллисекундах — конвертируем в секунды
             _token_expires_at = token_data['expires_at'] / 1000
             print("✅ Токен GigaChat получен/обновлён")
             return _access_token
         else:
             raise Exception(f"GigaChat OAuth error {response.status_code}: {response.text}")
-            
     except Exception as e:
         print(f"❌ Ошибка получения токена GigaChat: {e}")
         raise
 
 def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: float = 0.3) -> str:
-    """Универсальная функция вызова GigaChat API"""
     token = get_gigachat_token()
     url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
     
@@ -257,35 +240,24 @@ def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: f
     
     payload = {
         'model': model,
-        'messages': [
-            {'role': 'user', 'content': prompt}
-        ],
+        'messages': [{'role': 'user', 'content': prompt}],
         'temperature': temperature,
         'max_tokens': max_tokens,
         'stream': False
     }
     
     try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            verify=False,
-            timeout=60
-        )
+        response = requests.post(url, headers=headers, json=payload, verify=False, timeout=60)
         
         if response.status_code == 200:
             result = response.json()
-            content = result['choices'][0]['message']['content'].strip()
-            return content
+            return result['choices'][0]['message']['content'].strip()
         elif response.status_code == 401:
-            # Токен истёк — сбрасываем кэш и пробуем ещё раз
             global _access_token
             _access_token = None
             return call_gigachat(prompt, model, max_tokens, temperature)
         else:
             raise Exception(f"GigaChat API error {response.status_code}: {response.text}")
-            
     except requests.exceptions.Timeout:
         raise Exception("Таймаут запроса к GigaChat")
     except requests.exceptions.ConnectionError:
@@ -295,24 +267,16 @@ def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: f
         raise
 
 def call_gigachat_for_hashtags(text: str) -> str:
-    """Генерирует хештеги через GigaChat-Pro"""
     try:
         prompt = GIGACHAT_PROMPT_TEMPLATE.format(text=text)
-        response = call_gigachat(
-            prompt=prompt,
-            model=MODEL_HASHTAGS,
-            max_tokens=80,
-            temperature=0.2
-        )
-        # Извлекаем только хештеги из ответа
+        response = call_gigachat(prompt=prompt, model=MODEL_HASHTAGS, max_tokens=80, temperature=0.2)
         hashtags = " ".join(re.findall(r'#\S+', response))
         return hashtags if hashtags else "#товар"
     except Exception as e:
         print(f"⚠️ GigaChat (хештеги) ошибка: {e}")
-        return "#товар"  # Fallback
+        return "#товар"
 
 def generate_brand_fact(brand_name: str) -> str:
-    """Генерирует факт о бренде через GigaChat-Lite"""
     prompt = f"""
 Ты — редактор модного журнала. Напиши один интересный исторический факт о бренде {brand_name}, особенно связанный с Россией или СНГ, если такой есть. 
 Если факта про Россию нет — расскажи об интересном моменте из мировой истории бренда.
@@ -324,12 +288,7 @@ def generate_brand_fact(brand_name: str) -> str:
 - Не упоминай, что это факт.
 """
     try:
-        response = call_gigachat(
-            prompt=prompt,
-            model=MODEL_FACTS,
-            max_tokens=120,
-            temperature=0.7
-        )
+        response = call_gigachat(prompt=prompt, model=MODEL_FACTS, max_tokens=120, temperature=0.7)
         return response.strip()
     except Exception as e:
         print(f"⚠️ GigaChat (факты) ошибка: {e}")
@@ -340,15 +299,12 @@ def generate_brand_fact(brand_name: str) -> str:
 def extract_and_increase_price(text):
     match = re.search(r'(\d{3,})\s*₽?', text)
     if match:
-        base_price = int(match.group(1))
-        return base_price + PRICE_INCREMENT
+        return int(match.group(1)) + PRICE_INCREMENT
     return None
 
 def remove_contacts(text):
-    contact_pattern = r'@\w+'
-    cleaned_text = re.sub(contact_pattern, '', text)
-    cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-    return cleaned_text
+    cleaned_text = re.sub(r'@\w+', '', text)
+    return re.sub(r'\s+', ' ', cleaned_text).strip()
 
 # --- Публикация в Telegram ---
 async def publish_via_bot(bot_token, channel, text, media_paths, button_text=None, button_url=None):
@@ -376,7 +332,6 @@ if __name__ == "__main__":
             raise EnvironmentError(f"❌ Переменная окружения {var} не задана!")
 
     os.makedirs('downloads', exist_ok=True)
-
     only_brand_fact = os.getenv('ONLY_BRAND_FACT') == '1'
 
     if only_brand_fact:
@@ -385,7 +340,6 @@ if __name__ == "__main__":
     else:
         last_processed = load_last_processed()
         print(f"Последние ID по каналам: {last_processed}")
-
         force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
         if force_full_repost:
             print("🔄 Принудительный режим")
@@ -394,31 +348,18 @@ if __name__ == "__main__":
         with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
             for entity in SOURCE_CHANNEL_ENTITIES:
                 last_id = last_processed.get(entity, 0)
-
                 if force_full_repost:
                     print(f"🔄 Запрашиваю последние {MAX_MESSAGES_TO_CHECK} постов из {entity}")
                     all_messages = list(client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK))
                 else:
                     print(f"🔍 Проверяю {entity}, пропускаю ID ≤ {last_id}")
-                    all_messages = []
-                    for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK):
-                        if msg.id <= last_id:
-                            break
-                        all_messages.append(msg)
+                    all_messages = [msg for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK) if msg.id > last_id]
 
                 for msg in all_messages:
-                    if not force_full_repost and msg.id <= last_id:
+                    if is_post_failed(entity, msg.id) or is_source_post_published(entity, msg.id):
                         continue
-                    if is_post_failed(entity, msg.id):
-                        print(f"⏭️ Пропускаем ранее упавший пост {msg.id}")
-                        continue
-
                     original_text = (msg.raw_text or "").strip()
                     if not original_text:
-                        continue
-
-                    if is_source_post_published(entity, msg.id):
-                        print(f"⏭️ Пропускаем уже опубликованный пост {msg.id} из {entity}")
                         continue
 
                     media_path = None
@@ -427,24 +368,20 @@ if __name__ == "__main__":
                             path = client.download_media(msg.media, file=f"downloads/{msg.id}_media")
                             if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
                                 media_path = path
-                                print(f"✅ Медиа сохранено: {path}")
-                            else:
-                                print(f"⏭️ Медиа >10 МБ — пропускаем (ID: {msg.id})")
                         except Exception as e:
                             print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
 
-                    posts_with_media.append({
-                        'entity': entity,
-                        'msg_id': msg.id,
-                        'text': original_text,
-                        'media_path': media_path
-                    })
+                    posts_with_media.append({'entity': entity, 'msg_id': msg.id, 'text': original_text, 'media_path': media_path})
                     print(f"✅ Найден НОВЫЙ пост {msg.id} в {entity}")
 
         # Публикация товарных постов
         if posts_with_media:
             posts_with_media.sort(key=lambda x: x['msg_id'])
-            for item in posts_with_media:
+            for i, item in enumerate(posts_with_media):
+                # ⏱ Задержка между постами для обхода flood control
+                if i > 0:
+                    time.sleep(3)
+                
                 entity = item['entity']
                 msg_id = item['msg_id']
                 text = item['text']
@@ -457,7 +394,6 @@ if __name__ == "__main__":
                     button_text = f"Заказать за {extracted_price} >>" if extracted_price else "Заказать >>"
                     price_for_message = extracted_price if extracted_price else "не указана"
 
-                    # Генерация хештегов
                     hashtags = call_gigachat_for_hashtags(cleaned_text)
 
                     # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
@@ -477,28 +413,35 @@ if __name__ == "__main__":
 
                     # === ФОРМИРОВАНИЕ ЗАКАЗА ===
                     short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    order_lines = [
-                        f"хочу заказать товар {short_code}-{msg_id}",
-                        hashtags
-                    ]
+                    order_lines = [f"хочу заказать товар {short_code}-{msg_id}", hashtags]
                     if isinstance(price_for_message, int):
                         order_lines.append(f"Цена: {price_for_message} ₽")
-                    pre_text = "\n".join(order_lines)
-                    encoded_text = urllib.parse.quote(pre_text)
+                    encoded_text = urllib.parse.quote("\n".join(order_lines))
                     button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
 
                     media_paths = [media_path] if media_path else []
 
-                    # === ПУБЛИКАЦИЯ В TELEGRAM ===
-                    asyncio.run(publish_via_bot(
-                        BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url
-                    ))
-                    print(f"✅ Успешно опубликован пост {msg_id}")
+                    # === ПУБЛИКАЦИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ (flood control) ===
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            asyncio.run(publish_via_bot(BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url))
+                            print(f"✅ Успешно опубликован пост {msg_id}")
+                            break
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "Flood control" in error_msg and attempt < max_retries - 1:
+                                match = re.search(r"Retry in (\d+) seconds", error_msg)
+                                wait_time = int(match.group(1)) + 1 if match else 5
+                                print(f"⏳ Flood control, жду {wait_time}с (попытка {attempt+1}/{max_retries})")
+                                time.sleep(wait_time)
+                            else:
+                                raise
 
                     # === СОХРАНЕНИЕ СОСТОЯНИЯ ===
                     if detected_brand:
                         save_last_published_brand(detected_brand)
-                        print(f"🔖 Сохранён бренд последней публикации: {detected_brand}")
+                        print(f"🔖 Сохранён бренд: {detected_brand}")
                     mark_source_post_as_published(entity, msg_id)
                     save_last_processed(entity, msg_id)
 
@@ -514,15 +457,10 @@ if __name__ == "__main__":
     force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
     last_fact_date = get_last_brand_fact_date()
     now = datetime.now()
-    should_post_fact = (
-        force_fact or
-        last_fact_date is None or
-        (now - last_fact_date) >= timedelta(days=BRAND_FACT_INTERVAL_DAYS)
-    )
+    should_post_fact = force_fact or last_fact_date is None or (now - last_fact_date) >= timedelta(days=BRAND_FACT_INTERVAL_DAYS)
 
     if should_post_fact:
         print("🔄 Планируется публикация факт-поста о бренде...")
-        
         brand = load_last_published_brand()
         if not brand or brand not in BRAND_HASHTAGS:
             import random
@@ -532,28 +470,21 @@ if __name__ == "__main__":
             print(f"🧠 Факт-пост о бренде: {brand}")
 
         fact_text = generate_brand_fact(brand)
-
         brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and').replace('’', ''))
         caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
-
         print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
-        # Задержка перед публикацией
-        time.sleep(5)
+        time.sleep(5)  # Задержка перед факт-постом
 
         try:
-            # Telegram
             asyncio.run(publish_via_bot(
-                BOT_TOKEN, TARGET_CHANNEL, caption,
-                media_paths=[],
+                BOT_TOKEN, TARGET_CHANNEL, caption, media_paths=[],
                 button_text="Смотреть товары этого бренда 👀",
                 button_url=YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
             ))
             print("✅ Факт-пост опубликован в Telegram")
-
             if not only_brand_fact:
                 set_last_brand_fact_date()
             print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
-
         except Exception as e:
             print(f"⚠️ Факт-пост не опубликован: {e}")
