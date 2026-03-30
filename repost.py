@@ -6,6 +6,7 @@ import requests
 import re
 import os
 import asyncio
+import random
 from datetime import datetime, timedelta
 
 from telethon.sync import TelegramClient
@@ -31,11 +32,11 @@ YOUR_TG_LINK = 'https://t.me/mazemc'
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
 
-# ==================== МОДЕЛИ GIGACHAT (исправлено по результатам теста) ====================
-# ✅ Доступна: GigaChat-Pro
-# ❌ Недоступны: GigaChat-Lite (404), GigaChat-Max (402 Payment Required)
-MODEL_HASHTAGS = 'GigaChat-Pro'  # Для генерации хештегов
-MODEL_FACTS = 'GigaChat-Pro'     # Для фактов о брендах (только Pro работает)
+# ==================== МОДЕЛИ GIGACHAT (ИСПРАВЛЕНО!) ====================
+# ✅ По результатам теста: только GigaChat имеет токены (47,955)
+# ❌ GigaChat-Pro и GigaChat-Max: 0 токенов (402 Payment Required)
+MODEL_HASHTAGS = 'GigaChat'      # Для генерации хештегов
+MODEL_FACTS = 'GigaChat'         # Для фактов о брендах
 
 # --- Сокращения для каналов ---
 CHANNEL_SHORTCODES = {
@@ -99,8 +100,33 @@ BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
 BRAND_FACT_INTERVAL_DAYS = 3
 LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
+FACTS_HISTORY_FILE = 'facts_history.json'
+MAX_FACTS_HISTORY = 50
 
-# Шаблон промпта для хештегов
+# --- Аспекты для разнообразия фактов ---
+FACT_ASPECTS = [
+    "история создания бренда",
+    "основатель и его биография",
+    "первый продукт или коллекция",
+    "скандальный или спорный момент",
+    "инновация или прорыв",
+    "связь с искусством или культурой",
+    "благотворительность и социальные проекты",
+    "неожиданный факт о производстве",
+    "влияние на моду и тренды",
+    "редкий или малоизвестный факт",
+    "сотрудничество с другими брендами",
+    "изменение логотипа или айдентики",
+    "расширение в новые страны",
+    "культовый продукт или бестселлер",
+    "экологические инициативы",
+    "технологии и материалы",
+    "знаменитые амбассадоры бренда",
+    "архитектура магазинов",
+    "упаковка и фирменный стиль",
+    "связь с кино или музыкой"
+]
+
 GIGACHAT_PROMPT_TEMPLATE = """
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
 Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
@@ -120,7 +146,6 @@ LAST_PROCESSED_FILE = 'last_processed.json'
 FAILED_POSTS_FILE = 'failed_posts.txt'
 PUBLISHED_SOURCE_POSTS_FILE = 'published_source_posts.txt'
 
-# Глобальные переменные для кэширования токена
 _access_token = None
 _token_expires_at = 0
 
@@ -192,6 +217,40 @@ def set_last_brand_fact_date():
     with open(BRAND_FACT_LAST_POST_FILE, 'w') as f:
         f.write(datetime.now().isoformat())
 
+def load_facts_history():
+    if os.path.exists(FACTS_HISTORY_FILE):
+        try:
+            with open(FACTS_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_facts_history(history):
+    if len(history) > MAX_FACTS_HISTORY:
+        sorted_history = dict(sorted(history.items(), key=lambda x: x[1], reverse=True)[:MAX_FACTS_HISTORY])
+        history = sorted_history
+    with open(FACTS_HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def normalize_text(text):
+    return ' '.join(text.lower().split())
+
+def is_duplicate_fact(new_fact, brand, history, threshold=0.6):
+    new_normalized = normalize_text(new_fact)
+    new_words = set(new_normalized.split())
+    
+    for key, old_fact in history.items():
+        if key.startswith(brand.lower() + "_"):
+            old_normalized = normalize_text(old_fact)
+            old_words = set(old_normalized.split())
+            if len(new_words) == 0 or len(old_words) == 0:
+                continue
+            similarity = len(new_words & old_words) / len(new_words | old_words)
+            if similarity > threshold:
+                return True
+    return False
+
 # ==================== GIGACHAT API ====================
 
 def get_gigachat_token():
@@ -256,6 +315,8 @@ def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: f
             global _access_token
             _access_token = None
             return call_gigachat(prompt, model, max_tokens, temperature)
+        elif response.status_code == 402:
+            raise Exception("💰 Payment Required — закончились токены!")
         else:
             raise Exception(f"GigaChat API error {response.status_code}: {response.text}")
     except requests.exceptions.Timeout:
@@ -277,22 +338,50 @@ def call_gigachat_for_hashtags(text: str) -> str:
         return "#товар"
 
 def generate_brand_fact(brand_name: str) -> str:
-    prompt = f"""
-Ты — редактор модного журнала. Напиши один интересный исторический факт о бренде {brand_name}, особенно связанный с Россией или СНГ, если такой есть. 
-Если факта про Россию нет — расскажи об интересном моменте из мировой истории бренда.
-Формат:
-- Текст должен быть живым, с эмодзи (1–2 штуки).
-- Без вводных слов вроде «Вот факт:».
-- Максимум 2–3 предложения.
-- На русском языке.
-- Не упоминай, что это факт.
-"""
-    try:
-        response = call_gigachat(prompt=prompt, model=MODEL_FACTS, max_tokens=120, temperature=0.7)
-        return response.strip()
-    except Exception as e:
-        print(f"⚠️ GigaChat (факты) ошибка: {e}")
-        return f"Бренд {brand_name} — один из самых влиятельных в мире моды. 💫"
+    """Генерирует УНИКАЛЬНЫЙ факт о бренде с защитой от повторов"""
+    history = load_facts_history()
+    aspect = random.choice(FACT_ASPECTS)
+    request_id = str(uuid.uuid4())[:8]
+    
+    print(f"🎲 Аспект факта: {aspect}")
+    
+    prompt = f"""Ты — эксперт по истории моды. Придумай УНИКАЛЬНЫЙ факт о бренде {brand_name}.
+Сфокусируйся на: {aspect}
+
+Требования:
+1. КОНКРЕТНЫЙ факт (даты, имена, цифры если возможно)
+2. Избегай общих фраз вроде "бренд основан в..."
+3. Найди НЕОБЫЧНЫЙ или МАЛОИЗВЕСТНЫЙ момент
+4. 1-2 эмодзи по теме
+5. 2-3 предложения максимум
+6. Пиши живо и интересно
+
+ID запроса: {request_id}
+
+Факт:"""
+    
+    for attempt in range(3):
+        try:
+            temp = 0.8 + (attempt * 0.1)  # 0.8 → 0.9 → 1.0
+            response = call_gigachat(prompt=prompt, model=MODEL_FACTS, max_tokens=150, temperature=temp)
+            
+            if attempt > 0 and is_duplicate_fact(response, brand_name, history):
+                print(f"⚠️ Факт похож на предыдущие, пробую снова (попытка {attempt + 2})...")
+                continue
+            
+            history_key = f"{brand_name.lower()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            history[history_key] = response
+            save_facts_history(history)
+            
+            print(f"✅ Уникальный факт сгенерирован (попытка {attempt + 1})")
+            return response
+            
+        except Exception as e:
+            print(f"⚠️ Ошибка генерации факта: {e}")
+            if attempt == 2:
+                return f"Бренд {brand_name} — один из самых влиятельных в мире моды. 💫"
+    
+    return f"Бренд {brand_name} — легенда мировой моды. ✨"
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
@@ -378,9 +467,8 @@ if __name__ == "__main__":
         if posts_with_media:
             posts_with_media.sort(key=lambda x: x['msg_id'])
             for i, item in enumerate(posts_with_media):
-                # ⏱ Задержка между постами для обхода flood control
                 if i > 0:
-                    time.sleep(3)
+                    time.sleep(3)  # ⏱ Защита от flood control
                 
                 entity = item['entity']
                 msg_id = item['msg_id']
@@ -421,7 +509,7 @@ if __name__ == "__main__":
 
                     media_paths = [media_path] if media_path else []
 
-                    # === ПУБЛИКАЦИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ (flood control) ===
+                    # === ПУБЛИКАЦИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ ===
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
@@ -438,7 +526,6 @@ if __name__ == "__main__":
                             else:
                                 raise
 
-                    # === СОХРАНЕНИЕ СОСТОЯНИЯ ===
                     if detected_brand:
                         save_last_published_brand(detected_brand)
                         print(f"🔖 Сохранён бренд: {detected_brand}")
@@ -463,7 +550,6 @@ if __name__ == "__main__":
         print("🔄 Планируется публикация факт-поста о бренде...")
         brand = load_last_published_brand()
         if not brand or brand not in BRAND_HASHTAGS:
-            import random
             brand = random.choice(BRAND_FACTS_TOPICS)
             print(f"⚠️ Последний бренд не найден, используем случайный: {brand}")
         else:
@@ -474,7 +560,7 @@ if __name__ == "__main__":
         caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
         print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
-        time.sleep(5)  # Задержка перед факт-постом
+        time.sleep(5)
 
         try:
             asyncio.run(publish_via_bot(
