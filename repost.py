@@ -13,7 +13,7 @@ from telethon.sync import TelegramClient
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
 
-# --- 🔧 Настройки ---
+# ==================== 🔧 НАСТРОЙКИ (из GitHub Secrets) ====================
 API_ID = os.getenv('API_ID')
 API_HASH = os.getenv('API_HASH')
 SESSION_NAME = 'gigachat_telegram_reposter'
@@ -27,25 +27,27 @@ MAX_MESSAGES_TO_CHECK = 20
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 TARGET_CHANNEL = '@rnduseu'
-YOUR_TG_LINK = 'https://t.me/mazemc'
+
+# 🔹 Ссылки на менеджеров (из GitHub Secrets)
+TG_MANAGER_URL = os.getenv('TG_MANAGER_URL', 'https://t.me/mazemc')
+MAX_MANAGER_URL = os.getenv('MAX_MANAGER_URL', 'https://max.ru/u/f9LHodD0cOJtEr3BsshdQTSCXEmc_uyhKiSPqN9iMAPmv01OY61zDUVL2zc')
+TG_USE_START_PARAM = os.getenv('TG_USE_START_PARAM', 'false').lower() == 'true'
 
 API_KEY = os.getenv('GIGACHAT_API_KEY')
 PRICE_INCREMENT = 1000
 
-# ==================== МОДЕЛИ GIGACHAT (ИСПРАВЛЕНО!) ====================
-# ✅ По результатам теста: только GigaChat имеет токены (47,955)
-# ❌ GigaChat-Pro и GigaChat-Max: 0 токенов (402 Payment Required)
-MODEL_HASHTAGS = 'GigaChat'      # Для генерации хештегов
-MODEL_FACTS = 'GigaChat'         # Для фактов о брендах
+# ==================== МОДЕЛИ GIGACHAT ====================
+MODEL_HASHTAGS = 'GigaChat'
+MODEL_FACTS = 'GigaChat'
 
-# --- Сокращения для каналов ---
+# ==================== Сокращения для каналов ====================
 CHANNEL_SHORTCODES = {
     'shoppogolikhm': 'sh',
     'brand_shop_usa': 'bu',
     'brand_shop_in_russia': 'br',
 }
 
-# --- Единые хештеги брендов ---
+# ==================== Единые хештеги брендов ====================
 BRAND_HASHTAGS = {
     'Nike': 'nike',
     'Adidas': 'adidas',
@@ -103,7 +105,7 @@ LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 FACTS_HISTORY_FILE = 'facts_history.json'
 MAX_FACTS_HISTORY = 50
 
-# --- Аспекты для разнообразия фактов ---
+# ==================== Аспекты для фактов ====================
 FACT_ASPECTS = [
     "история создания бренда",
     "основатель и его биография",
@@ -151,7 +153,8 @@ _token_expires_at = 0
 
 requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
 
-# --- Вспомогательные функции ---
+# ==================== Вспомогательные функции ====================
+
 def load_last_processed():
     if os.path.exists(LAST_PROCESSED_FILE):
         try:
@@ -395,12 +398,24 @@ def remove_contacts(text):
     cleaned_text = re.sub(r'@\w+', '', text)
     return re.sub(r'\s+', ' ', cleaned_text).strip()
 
-# --- Публикация в Telegram ---
-async def publish_via_bot(bot_token, channel, text, media_paths, button_text=None, button_url=None):
+# ==================== ПУБЛИКАЦИЯ В TELEGRAM ====================
+
+async def publish_via_bot(bot_token, channel, text, media_paths, buttons=None):
+    """
+    Публикует пост с кнопками.
+    
+    buttons: список кортежей [(текст_кнопки, url), ...]
+    Пример: [("🛒 ТГ", "https://t.me/bot?start=123"), ("⚡ MAX", "https://max.ru/...")]
+    """
     bot = Bot(token=bot_token)
     reply_markup = None
-    if button_text and button_url:
-        keyboard = [[InlineKeyboardButton(button_text, url=button_url)]]
+    
+    if buttons and len(buttons) > 0:
+        # Создаём клавиатуру: максимум 2 кнопки в ряд
+        keyboard = []
+        for i in range(0, len(buttons), 2):  # шаг 2 = 2 кнопки в строке
+            row = [InlineKeyboardButton(txt, url=url) for txt, url in buttons[i:i+2]]
+            keyboard.append(row)
         reply_markup = InlineKeyboardMarkup(keyboard)
 
     if media_paths:
@@ -413,7 +428,8 @@ async def publish_via_bot(bot_token, channel, text, media_paths, button_text=Non
     else:
         await bot.send_message(chat_id=channel, text=text, reply_markup=reply_markup)
 
-# --- Основной блок ---
+# ==================== ОСНОВНОЙ БЛОК ====================
+
 if __name__ == "__main__":
     required_vars = ['API_ID', 'API_HASH', 'BOT_TOKEN', 'GIGACHAT_API_KEY']
     for var in required_vars:
@@ -479,9 +495,8 @@ if __name__ == "__main__":
                 try:
                     cleaned_text = remove_contacts(text)
                     extracted_price = extract_and_increase_price(cleaned_text)
-                    button_text = f"Заказать за {extracted_price} >>" if extracted_price else "Заказать >>"
-                    price_for_message = extracted_price if extracted_price else "не указана"
-
+                    
+                    # Генерация хештегов через GigaChat
                     hashtags = call_gigachat_for_hashtags(cleaned_text)
 
                     # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
@@ -499,13 +514,40 @@ if __name__ == "__main__":
                                 detected_brand = brand
                                 break
 
-                    # === ФОРМИРОВАНИЕ ЗАКАЗА ===
+                    # === ФОРМИРОВАНИЕ КНОПОК ЗАКАЗА ===
                     short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    order_lines = [f"хочу заказать товар {short_code}-{msg_id}", hashtags]
-                    if isinstance(price_for_message, int):
-                        order_lines.append(f"Цена: {price_for_message} ₽")
-                    encoded_text = urllib.parse.quote("\n".join(order_lines))
-                    button_url = f"{YOUR_TG_LINK}?text={encoded_text}"
+                    product_id = f"{short_code}-{msg_id}"  # например: bu-148259
+
+                    # 🔹 Кнопка Telegram
+                    if TG_USE_START_PARAM:
+                        # Deep link для бота: ?start=
+                        tg_button_url = f"{TG_MANAGER_URL}?start={product_id}"
+                    else:
+                        # Pre-fill сообщения для пользователя: ?text=
+                        order_text = f"хочу заказать товар {product_id}\n{hashtags}"
+                        if extracted_price:
+                            order_text += f"\nЦена: {extracted_price} ₽"
+                        tg_button_url = f"{TG_MANAGER_URL}?text={urllib.parse.quote(order_text)}"
+
+                    # 🔹 Кнопка MAX.ru
+                    max_button_url = MAX_MANAGER_URL
+                    # Если MAX поддерживает параметры — добавляем product_id
+                    if "?product=" not in max_button_url and "&product=" not in max_button_url:
+                        separator = "?" if "?" not in max_button_url else "&"
+                        max_button_url = f"{max_button_url}{separator}product={product_id}"
+
+                    # 🔹 Сборка списка кнопок (макс. 2 в ряд)
+                    buttons = [
+                        ("🛒 Заказать в ТГ", tg_button_url),
+                        ("⚡ Заказать в MAX", max_button_url),
+                    ]
+
+                    # 🔹 Добавляем подсказку про ID товара (если MAX не принимает параметры)
+                    if "product=" not in MAX_MANAGER_URL:
+                        caption_suffix = f"\n\n💡 При заказе в MAX укажите код: `{product_id}`"
+                        caption_text = hashtags + caption_suffix
+                    else:
+                        caption_text = hashtags
 
                     media_paths = [media_path] if media_path else []
 
@@ -513,7 +555,14 @@ if __name__ == "__main__":
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
-                            asyncio.run(publish_via_bot(BOT_TOKEN, TARGET_CHANNEL, hashtags, media_paths, button_text, button_url))
+                            # 🔥 ПЕРЕДАЁМ buttons= ВМЕСТО button_text/button_url
+                            asyncio.run(publish_via_bot(
+                                BOT_TOKEN, 
+                                TARGET_CHANNEL, 
+                                caption_text,
+                                media_paths, 
+                                buttons=buttons
+                            ))
                             print(f"✅ Успешно опубликован пост {msg_id}")
                             break
                         except Exception as e:
@@ -540,7 +589,7 @@ if __name__ == "__main__":
         else:
             print("❌ Нет новых постов для публикации.")
 
-    # --- Факт-посты ---
+    # ==================== ФАКТ-ПОСТЫ ====================
     force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
     last_fact_date = get_last_brand_fact_date()
     now = datetime.now()
@@ -562,11 +611,20 @@ if __name__ == "__main__":
 
         time.sleep(5)
 
+        # Кнопки для факт-поста
+        brand_for_search = urllib.parse.quote(brand)
+        fact_buttons = [
+            ("🛒 Товары в ТГ", f"{TG_MANAGER_URL}?text=Хочу%20посмотреть%20товары%20{brand_for_search}"),
+            ("⚡ Товары в MAX", f"{MAX_MANAGER_URL}?search={brand_for_search}"),
+        ]
+
         try:
             asyncio.run(publish_via_bot(
-                BOT_TOKEN, TARGET_CHANNEL, caption, media_paths=[],
-                button_text="Смотреть товары этого бренда 👀",
-                button_url=YOUR_TG_LINK + "?text=Хочу%20посмотреть%20товары%20" + urllib.parse.quote(brand)
+                BOT_TOKEN, 
+                TARGET_CHANNEL, 
+                caption, 
+                media_paths=[],
+                buttons=fact_buttons
             ))
             print("✅ Факт-пост опубликован в Telegram")
             if not only_brand_fact:
