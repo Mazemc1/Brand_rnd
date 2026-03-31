@@ -129,16 +129,28 @@ FACT_ASPECTS = [
     "связь с кино или музыкой"
 ]
 
+# 🔹 Категории товаров для хештегов
+CATEGORY_KEYWORDS = {
+    'обувь': ['кроссовки', 'ботинки', 'туфли', 'кеды', 'сникеры', 'сапоги', 'ботильоны', 'лоферы', 'мокасины', 'sandals', 'shoes', 'sneakers', 'boots'],
+    'одежда': ['футболка', 'рубашка', 'джинсы', 'брюки', 'куртка', 'пальто', 'платье', 'юбка', 'свитер', 'худи', 'толстовка', 'ветровка', 'жилет', 'шорты', 'coat', 'jacket', 'shirt', 'dress', 'jeans', 'pants', 'hoodie', 'sweater'],
+    'очки': ['очки', 'солнцезащитные', 'sunglasses', 'glasses', 'eyewear'],
+    'сумка': ['сумка', 'рюкзак', 'портфель', 'кошелек', 'bag', 'backpack', 'wallet', 'purse'],
+    'аксессуары': ['ремень', 'шапка', 'шарф', 'перчатки', 'belt', 'hat', 'scarf', 'gloves', 'accessories']
+}
+
 GIGACHAT_PROMPT_TEMPLATE = """
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
-Получив описание товара, ты должен сгенерировать краткий набор релевантных хештегов на русском языке.
-Формат: только хештеги через пробел, начиная с решётки.
-Обязательно включи:
-- Название бренда — используй ТОЛЬКО: {allowed_hashtags}.
-- Категорию товара (если "сумка" → #сумка).
-- Статус (#в_наличии если "В НАЛИЧИИ", иначе #доставка).
-- Никаких пояснений, только хештеги.
-- Игнорируй посты без товара.
+Получив описание товара, ты должен сгенерировать ТОЛЬКО 3 хештега на русском языке.
+
+Формат: только 3 хештега через пробел, начиная с решётки.
+
+Строго следуй правилам:
+1. Первый хештег: #в_наличии (если есть слово "В НАЛИЧИИ" или "available") ИЛИ #доставка (если доставка под заказ)
+2. Второй хештег: категория товара — выбери ОДИН из: #обувь #одежда #очки #сумка #аксессуары
+3. Третий хештег: бренд — используй ТОЛЬКО из списка: {allowed_hashtags}
+
+НИКАКИХ других хештегов! Только 3!
+Никаких пояснений, только хештеги.
 
 Текст:
 {{text}}
@@ -330,15 +342,72 @@ def call_gigachat(prompt: str, model: str, max_tokens: int = 100, temperature: f
         print(f"❌ Ошибка вызова GigaChat: {e}")
         raise
 
+def detect_category(text):
+    """Определяет категорию товара по ключевым словам"""
+    text_lower = text.lower()
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                return f"#{category}"
+    return "#товар"  # fallback
+
+def detect_availability(text):
+    """Определяет статус наличия"""
+    text_lower = text.lower()
+    if "в наличии" in text_lower or "available" in text_lower or "ready" in text_lower:
+        return "#в_наличии"
+    else:
+        return "#доставка"
+
 def call_gigachat_for_hashtags(text: str) -> str:
+    """
+    Генерирует ровно 3 хештега:
+    1. #в_наличии или #доставка
+    2. Категория (#обувь/#одежда/#очки/#сумка/#аксессуары)
+    3. Бренд
+    """
     try:
+        # 🔹 Получаем хештеги от GigaChat
         prompt = GIGACHAT_PROMPT_TEMPLATE.format(text=text)
         response = call_gigachat(prompt=prompt, model=MODEL_HASHTAGS, max_tokens=80, temperature=0.2)
-        hashtags = " ".join(re.findall(r'#\S+', response))
-        return hashtags if hashtags else "#товар"
+        
+        # Извлекаем все хештеги из ответа
+        all_hashtags = re.findall(r'#\S+', response)
+        
+        # 🔹 Берём бренд из ответа GigaChat (последний хештег обычно бренд)
+        brand_hashtag = None
+        for hashtag in all_hashtags:
+            hashtag_clean = hashtag.lower().strip()
+            for brand, tag in BRAND_HASHTAGS.items():
+                if f"#{tag}" == hashtag_clean or tag in hashtag_clean:
+                    brand_hashtag = f"#{tag}"
+                    break
+            if brand_hashtag:
+                break
+        
+        # Если GigaChat не вернул бренд — определяем сами
+        if not brand_hashtag:
+            text_lower = text.lower()
+            for brand, tag in BRAND_HASHTAGS.items():
+                brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
+                if brand_clean in text_lower:
+                    brand_hashtag = f"#{tag}"
+                    break
+        
+        if not brand_hashtag:
+            brand_hashtag = "#бренд"  # fallback
+        
+        # 🔹 Формируем финальные 3 хештега
+        availability = detect_availability(text)
+        category = detect_category(text)
+        
+        final_hashtags = f"{availability} {category} {brand_hashtag}"
+        return final_hashtags
+        
     except Exception as e:
         print(f"⚠️ GigaChat (хештеги) ошибка: {e}")
-        return "#товар"
+        # Fallback: базовые хештеги
+        return "#доставка #товар #бренд"
 
 def generate_brand_fact(brand_name: str) -> str:
     """Генерирует УНИКАЛЬНЫЙ факт о бренде с защитой от повторов"""
@@ -389,9 +458,11 @@ ID запроса: {request_id}
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 def extract_and_increase_price(text):
+    """Находит цену в тексте и добавляет +1000₽"""
     match = re.search(r'(\d{3,})\s*₽?', text)
     if match:
-        return int(match.group(1)) + PRICE_INCREMENT
+        original_price = int(match.group(1))
+        return original_price + PRICE_INCREMENT
     return None
 
 def remove_contacts(text):
@@ -403,17 +474,14 @@ def remove_contacts(text):
 async def publish_via_bot(bot_token, channel, text, media_paths, buttons=None):
     """
     Публикует пост с кнопками.
-    
     buttons: список кортежей [(текст_кнопки, url), ...]
-    Пример: [("🛒 ТГ", "https://t.me/bot?start=123"), ("⚡ MAX", "https://max.ru/...")]
     """
     bot = Bot(token=bot_token)
     reply_markup = None
     
     if buttons and len(buttons) > 0:
-        # Создаём клавиатуру: максимум 2 кнопки в ряд
         keyboard = []
-        for i in range(0, len(buttons), 2):  # шаг 2 = 2 кнопки в строке
+        for i in range(0, len(buttons), 2):
             row = [InlineKeyboardButton(txt, url=url) for txt, url in buttons[i:i+2]]
             keyboard.append(row)
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -494,9 +562,11 @@ if __name__ == "__main__":
                 print(f"\n🔄 Публикую пост {msg_id} из {entity}")
                 try:
                     cleaned_text = remove_contacts(text)
-                    extracted_price = extract_and_increase_price(cleaned_text)
                     
-                    # Генерация хештегов через GigaChat
+                    # 🔹 Вычисляем цену: оригинал + 1000₽
+                    final_price = extract_and_increase_price(cleaned_text)
+                    
+                    # 🔹 Генерация ровно 3 хештегов
                     hashtags = call_gigachat_for_hashtags(cleaned_text)
 
                     # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
@@ -514,40 +584,41 @@ if __name__ == "__main__":
                                 detected_brand = brand
                                 break
 
+                    # === ФОРМИРОВАНИЕ КАПШН С ЦЕНОЙ ===
+                    # 🔹 Добавляем цену в начало поста, если она найдена
+                    if final_price:
+                        formatted_price = f"{final_price:,}".replace(',', ' ')
+                        caption_text = f"💰 Цена: {formatted_price}₽\n\n{hashtags}"
+                    else:
+                        caption_text = hashtags
+
                     # === ФОРМИРОВАНИЕ КНОПОК ЗАКАЗА ===
                     short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    product_id = f"{short_code}-{msg_id}"  # например: bu-148259
+                    product_id = f"{short_code}-{msg_id}"
 
-                    # 🔹 Кнопка Telegram
+                    # 🔹 Кнопка TG
                     if TG_USE_START_PARAM:
-                        # Deep link для бота: ?start=
                         tg_button_url = f"{TG_MANAGER_URL}?start={product_id}"
                     else:
-                        # Pre-fill сообщения для пользователя: ?text=
                         order_text = f"хочу заказать товар {product_id}\n{hashtags}"
-                        if extracted_price:
-                            order_text += f"\nЦена: {extracted_price} ₽"
+                        if final_price:
+                            order_text += f"\nЦена: {final_price} ₽"
                         tg_button_url = f"{TG_MANAGER_URL}?text={urllib.parse.quote(order_text)}"
 
-                    # 🔹 Кнопка MAX.ru
+                    # 🔹 Кнопка MAX
                     max_button_url = MAX_MANAGER_URL
-                    # Если MAX поддерживает параметры — добавляем product_id
                     if "?product=" not in max_button_url and "&product=" not in max_button_url:
                         separator = "?" if "?" not in max_button_url else "&"
                         max_button_url = f"{max_button_url}{separator}product={product_id}"
 
-                    # 🔹 Сборка списка кнопок (макс. 2 в ряд)
+                    # 🔹 Кнопки: короткие названия
                     buttons = [
-                        ("🛒 Заказать в ТГ", tg_button_url),
-                        ("⚡ Заказать в MAX", max_button_url),
+                        ("🛒 TG", tg_button_url),
+                        ("⚡ MAX", max_button_url),
                     ]
 
-                    # 🔹 Добавляем подсказку про ID товара (если MAX не принимает параметры)
-                    if "product=" not in MAX_MANAGER_URL:
-                        caption_suffix = f"\n\n💡 При заказе в MAX укажите код: `{product_id}`"
-                        caption_text = hashtags + caption_suffix
-                    else:
-                        caption_text = hashtags
+                    # 🔹 УБРАНА ПОДСКАЗКА ПРО MAX!
+                    # Больше не добавляем "💡 При заказе в MAX укажите код..."
 
                     media_paths = [media_path] if media_path else []
 
@@ -555,7 +626,6 @@ if __name__ == "__main__":
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
-                            # 🔥 ПЕРЕДАЁМ buttons= ВМЕСТО button_text/button_url
                             asyncio.run(publish_via_bot(
                                 BOT_TOKEN, 
                                 TARGET_CHANNEL, 
@@ -614,8 +684,8 @@ if __name__ == "__main__":
         # Кнопки для факт-поста
         brand_for_search = urllib.parse.quote(brand)
         fact_buttons = [
-            ("🛒 Товары в ТГ", f"{TG_MANAGER_URL}?text=Хочу%20посмотреть%20товары%20{brand_for_search}"),
-            ("⚡ Товары в MAX", f"{MAX_MANAGER_URL}?search={brand_for_search}"),
+            ("🛒 TG", f"{TG_MANAGER_URL}?text=Хочу%20посмотреть%20товары%20{brand_for_search}"),
+            ("⚡ MAX", f"{MAX_MANAGER_URL}?search={brand_for_search}"),
         ]
 
         try:
