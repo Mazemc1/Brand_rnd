@@ -520,9 +520,12 @@ if __name__ == "__main__":
 
         posts_with_media = []
         _session = StringSession(os.getenv('TELEGRAM_SESSION')) if os.getenv('TELEGRAM_SESSION') else SESSION_NAME
-        with TelegramClient(_session, int(API_ID), API_HASH) as client:
-            if not client.is_user_authorized():
-                raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
+        def _need_auth():
+            raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
+
+        client = TelegramClient(_session, int(API_ID), API_HASH)
+        client.start(phone=_need_auth)
+        with client:
             for entity in SOURCE_CHANNEL_ENTITIES:
                 last_id = last_processed.get(entity, 0)
                 if force_full_repost:
