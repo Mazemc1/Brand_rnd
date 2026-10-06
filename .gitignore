@@ -1,0 +1,10 @@
+# секреты и артефакты репостера
+gigachat_telegram_reposter.session
+*.session
+downloads/
+last_processed.json
+last_brand_fact_post.txt
+failed_posts.txt
+published_source_posts.txt
+facts_history.json
+last_published_brand.txt
