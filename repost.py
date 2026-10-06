@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timedelta
 
 from telethon.sync import TelegramClient
+from telethon.sessions import StringSession
 from telegram import Bot, InlineKeyboardMarkup, InlineKeyboardButton
 import urllib.parse
 
@@ -518,7 +519,10 @@ if __name__ == "__main__":
             print("🔄 Принудительный режим")
 
         posts_with_media = []
-        with TelegramClient(SESSION_NAME, API_ID, API_HASH) as client:
+        _session = StringSession(os.getenv('TELEGRAM_SESSION')) if os.getenv('TELEGRAM_SESSION') else SESSION_NAME
+        with TelegramClient(_session, int(API_ID), API_HASH) as client:
+            if not client.is_user_authorized():
+                raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
             for entity in SOURCE_CHANNEL_ENTITIES:
                 last_id = last_processed.get(entity, 0)
                 if force_full_repost:
