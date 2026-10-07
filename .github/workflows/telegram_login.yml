@@ -1,0 +1,56 @@
+name: Telegram Login
+
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'send | sign'
+        required: true
+        default: 'send'
+      phone:
+        description: 'Телефон в формате +7... (для send)'
+        required: false
+      code:
+        description: 'Код из Telegram (для sign)'
+        required: false
+      password:
+        description: 'Пароль 2FA (если включён)'
+        required: false
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install deps
+        run: pip install "telethon>=1.34,<1.37" pynacl
+
+      - name: Restore login state
+        uses: actions/cache/restore@v4
+        with:
+          path: login_state.json
+          key: telegram-login-state-${{ github.run_id }}
+          restore-keys: telegram-login-state-
+
+      - name: Run login step
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+          STEP: ${{ github.event.inputs.step }}
+          PHONE: ${{ github.event.inputs.phone }}
+          CODE: ${{ github.event.inputs.code }}
+          PASSWORD: ${{ github.event.inputs.password }}
+        run: python login_ci.py
+
+      - name: Save login state
+        if: ${{ github.event.inputs.step == 'send' }}
+        uses: actions/cache/save@v4
+        with:
+          path: login_state.json
+          key: telegram-login-state-${{ github.run_id }}
