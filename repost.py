@@ -139,19 +139,23 @@ CATEGORY_KEYWORDS = {
     'аксессуары': ['ремень', 'шапка', 'шарф', 'перчатки', 'belt', 'hat', 'scarf', 'gloves', 'accessories']
 }
 
+ALLOWED_CATEGORIES = {f"#{c}" for c in CATEGORY_KEYWORDS}
+
 GIGACHAT_PROMPT_TEMPLATE = """
 Ты — помощник по созданию хештегов для товаров в Telegram-канале.
-Получив описание товара, ты должен сгенерировать ТОЛЬКО 3 хештега на русском языке.
+Внимательно изучи описание исходного объявления и пойми, что за товар продаётся.
+Ищи подсказки во всём тексте: тип товара, название модели, размеры (EU/US, S/M/L), материал, назначение.
+Примеры: "Air Force", "New Balance 530", "42 EU" → обувь; "худи", "оверсайз", "размер L" → одежда.
 
-Формат: только 3 хештега через пробел, начиная с решётки.
+Правила:
+1. Первый хештег: #в_наличии (если есть "В НАЛИЧИИ" или "available") ИЛИ #доставка (если доставка под заказ).
+2. Второй хештег: категория товара — выбери ОДИН из: #обувь #одежда #очки #сумка #аксессуары.
+   Если по описанию НЕЛЬЗЯ уверенно определить категорию — ПРОПУСТИ этот хештег совсем.
+   ЗАПРЕЩЕНО писать #товар и любые категории вне списка. Не угадывай наугад.
+3. Третий хештег: бренд — используй ТОЛЬКО из списка: {allowed_hashtags}.
+   Если бренд не распознан — пропусти его, не выдумывай.
 
-Строго следуй правилам:
-1. Первый хештег: #в_наличии (если есть слово "В НАЛИЧИИ" или "available") ИЛИ #доставка (если доставка под заказ)
-2. Второй хештег: категория товара — выбери ОДИН из: #обувь #одежда #очки #сумка #аксессуары
-3. Третий хештег: бренд — используй ТОЛЬКО из списка: {allowed_hashtags}
-
-НИКАКИХ других хештегов! Только 3!
-Никаких пояснений, только хештеги.
+Формат: 2 или 3 хештега через пробел, начиная с решётки. Никаких пояснений.
 
 Текст:
 {{text}}
@@ -350,7 +354,7 @@ def detect_category(text):
         for keyword in keywords:
             if keyword in text_lower:
                 return f"#{category}"
-    return "#товар"  # fallback
+    return None  # категория не определена — хештег не ставим
 
 def detect_availability(text):
     """Определяет статус наличия"""
@@ -362,53 +366,58 @@ def detect_availability(text):
 
 def call_gigachat_for_hashtags(text: str) -> str:
     """
-    Генерирует ровно 3 хештега:
+    Генерирует 2–3 хештега:
     1. #в_наличии или #доставка
-    2. Категория (#обувь/#одежда/#очки/#сумка/#аксессуары)
+    2. Категория (#обувь/#одежда/#очки/#сумка/#аксессуары) — только если товар понятен
     3. Бренд
+    Если категорию определить не удалось, хештег категории (в т.ч. #товар) НЕ ставится.
     """
+    availability = detect_availability(text)
+
+    def brand_from_text():
+        text_lower = text.lower()
+        for brand, tag in BRAND_HASHTAGS.items():
+            brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
+            if brand_clean in text_lower:
+                return f"#{tag}"
+        return None
+
     try:
-        # 🔹 Получаем хештеги от GigaChat
         prompt = GIGACHAT_PROMPT_TEMPLATE.format(text=text)
         response = call_gigachat(prompt=prompt, model=MODEL_HASHTAGS, max_tokens=80, temperature=0.2)
-        
-        # Извлекаем все хештеги из ответа
-        all_hashtags = re.findall(r'#\S+', response)
-        
-        # 🔹 Берём бренд из ответа GigaChat (последний хештег обычно бренд)
+        all_hashtags = [h.lower().strip('.,!;:') for h in re.findall(r'#\S+', response)]
+
+        # 🔹 Категория — из ответа ИИ, строго из разрешённого списка
+        category = next((h for h in all_hashtags if h in ALLOWED_CATEGORIES), None)
+        if not category:
+            category = detect_category(text)  # запасной вариант: ключевые слова
+
+        # 🔹 Бренд — из ответа ИИ
         brand_hashtag = None
         for hashtag in all_hashtags:
-            hashtag_clean = hashtag.lower().strip()
             for brand, tag in BRAND_HASHTAGS.items():
-                if f"#{tag}" == hashtag_clean or tag in hashtag_clean:
+                if f"#{tag}" == hashtag or tag in hashtag:
                     brand_hashtag = f"#{tag}"
                     break
             if brand_hashtag:
                 break
-        
-        # Если GigaChat не вернул бренд — определяем сами
         if not brand_hashtag:
-            text_lower = text.lower()
-            for brand, tag in BRAND_HASHTAGS.items():
-                brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
-                if brand_clean in text_lower:
-                    brand_hashtag = f"#{tag}"
-                    break
-        
+            brand_hashtag = brand_from_text()
         if not brand_hashtag:
             brand_hashtag = "#бренд"  # fallback
-        
-        # 🔹 Формируем финальные 3 хештега
-        availability = detect_availability(text)
-        category = detect_category(text)
-        
-        final_hashtags = f"{availability} {category} {brand_hashtag}"
-        return final_hashtags
-        
+
     except Exception as e:
         print(f"⚠️ GigaChat (хештеги) ошибка: {e}")
-        # Fallback: базовые хештеги
-        return "#доставка #товар #бренд"
+        # Fallback без ИИ: только ключевые слова, без #товар
+        category = detect_category(text)
+        brand_hashtag = brand_from_text() or "#бренд"
+
+    # 🔹 Собираем финальные хештеги: категория — только если определена
+    parts = [availability]
+    if category:
+        parts.append(category)
+    parts.append(brand_hashtag)
+    return " ".join(parts)
 
 def generate_brand_fact(brand_name: str) -> str:
     """Генерирует УНИКАЛЬНЫЙ факт о бренде с защитой от повторов"""
@@ -573,7 +582,7 @@ if __name__ == "__main__":
                     # 🔹 Вычисляем цену: оригинал + 1000₽
                     final_price = extract_and_increase_price(cleaned_text)
                     
-                    # 🔹 Генерация ровно 3 хештегов
+                    # 🔹 Генерация 2–3 хештегов (категория — только если товар понятен)
                     hashtags = call_gigachat_for_hashtags(cleaned_text)
 
                     # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
