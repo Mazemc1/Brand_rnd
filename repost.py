@@ -177,7 +177,13 @@ def load_last_processed():
         try:
             with open(LAST_PROCESSED_FILE, 'r') as f:
                 data = json.load(f)
-                return {str(k): int(v) for k, v in data.items()}
+                data = {str(k): int(v) for k, v in data.items()}
+                # Если RESET_STATE=1, сбрасываю на 5 постов назад для теста
+                if os.getenv('RESET_STATE') == '1':
+                    for key in data:
+                        data[key] = max(0, data[key] - 5)
+                    print(f"🔄 RESET_STATE: сбросил last_processed на 5 постов назад: {data}")
+                return data
         except Exception as e:
             print(f"⚠️ Ошибка загрузки {LAST_PROCESSED_FILE}: {e}")
     return {}
