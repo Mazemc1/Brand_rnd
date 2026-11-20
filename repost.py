@@ -607,13 +607,13 @@ if __name__ == "__main__":
     else:
         print("ℹ️ MAX_BOT_TOKEN не задан — кросспостинг в MAX выключен")
 
-        print(f"Последние ID по каналам: {last_processed}")
-        force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
-        if force_full_repost:
-            print("🔄 Принудительный режим")
+print(f"Последние ID по каналам: {last_processed}")
+force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
+if force_full_repost:
+    print("🔄 Принудительный режим")
 
-        posts_with_media = []
-        _session = StringSession(os.getenv('TELEGRAM_SESSION')) if os.getenv('TELEGRAM_SESSION') else SESSION_NAME
+posts_with_media = []
+_session = StringSession(os.getenv('TELEGRAM_SESSION')) if os.getenv('TELEGRAM_SESSION') else SESSION_NAME
         def _need_auth():
             raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
 
