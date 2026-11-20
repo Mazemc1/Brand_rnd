@@ -592,17 +592,12 @@ if __name__ == "__main__":
 
     # ==================== MAX (кросспостинг) ====================
     MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN')
-    MAX_CHAT_ID = os.getenv('MAX_CHAT_ID')
-    if MAX_BOT_TOKEN:
-        try:
-            MAX_CHAT_ID = asyncio.run(get_max_channel_chat_id(MAX_BOT_TOKEN))
-            if MAX_CHAT_ID:
-                print(f"📣 MAX активен: chat_id={MAX_CHAT_ID}")
-            else:
-                print("⚠️ MAX: бот не админ ни в одном канале, кросспостинг выключен")
-                MAX_BOT_TOKEN = None
-        except Exception as e:
-            print(f"⚠️ MAX init err: {e}"); MAX_BOT_TOKEN = None
+    MAX_CHAT_ID = os.getenv('MAX_CHANNEL_ID')  # использую MAX_CHANNEL_ID из Secrets
+    if MAX_BOT_TOKEN and MAX_CHAT_ID:
+        print(f"📣 MAX активен: chat_id={MAX_CHAT_ID} (из Secrets)")
+    elif MAX_BOT_TOKEN:
+        print("⚠️ MAX_BOT_TOKEN задан, но MAX_CHANNEL_ID нет — кросспостинг выключен")
+        MAX_BOT_TOKEN = None
     else:
         print("ℹ️ MAX_BOT_TOKEN не задан — кросспостинг в MAX выключен")
 
