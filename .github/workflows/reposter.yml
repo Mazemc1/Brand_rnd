@@ -19,6 +19,13 @@ on:
           - 'Нет'
           - 'Да'
         default: 'Нет'
+      reset_state:
+        description: 'Сбросить state (для теста кросспостинга)'
+        type: choice
+        options:
+          - 'Нет'
+          - 'Да'
+        default: 'Нет'
       force_full_repost:
         description: 'Перепроверить последние 20 постов в каждом канале'
         type: choice
