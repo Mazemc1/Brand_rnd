@@ -481,6 +481,71 @@ def remove_contacts(text):
 
 # ==================== ПУБЛИКАЦИЯ В TELEGRAM ====================
 
+
+async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons=None):
+    """Публикация поста в MAX (фото + caption + inline-кнопки)."""
+    import aiohttp
+    BASE = "https://platform-api2.max.ru"
+    headers = {"Authorization": bot_token, "Content-Type": "application/json"}
+
+    async def upload_photo(session, path):
+        # 1) получить upload_url
+        async with session.post(f"{BASE}/uploads", headers=headers, json={"type": "photo"}) as r:
+            if r.status != 200:
+                print(f"⚠️ MAX /uploads err {r.status}: {await r.text()}"); return None
+            up = await r.json()
+        upload_url = up.get("upload_url")
+        token = up.get("token")
+        if not upload_url or not token:
+            print("⚠️ MAX /uploads: нет upload_url/token"); return None
+        # 2) PUT файл
+        with open(path, "rb") as f:
+            async with session.put(upload_url, data=f) as r2:
+                if r2.status not in (200, 201, 204):
+                    print(f"⚠️ MAX PUT upload err {r2.status}"); return None
+        return {"type": "photo", "photo": {"token": token}}
+
+    async with aiohttp.ClientSession() as session:
+        attachments = []
+        for mp in media_paths:
+            att = await upload_photo(session, mp)
+            if att: attachments.append(att)
+
+        # inline_keyboard: [[{text, url}]]
+        inline_keyboard = []
+        if buttons:
+            row = []
+            for label, url in buttons:
+                row.append({"text": label, "url": url})
+            inline_keyboard.append(row)
+
+        body = {"chat_id": channel_chat_id, "text": text}
+        if attachments: body["attachments"] = attachments
+        if inline_keyboard: body["inline_keyboard"] = inline_keyboard
+
+        async with session.post(f"{BASE}/messages", headers=headers, json=body) as r:
+            resp = await r.text()
+            if r.status in (200, 201):
+                print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
+                return True
+            print(f"⚠️ MAX /messages err {r.status}: {resp[:200]}")
+            return False
+
+
+async def get_max_channel_chat_id(bot_token):
+    """Находит chat_id первого канала, где бот админ."""
+    import aiohttp
+    BASE = "https://platform-api2.max.ru"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{BASE}/chats", headers={"Authorization": bot_token}) as r:
+            if r.status != 200:
+                print(f"⚠️ MAX /chats err {r.status}: {await r.text()}"); return None
+            data = await r.json()
+    for ch in data.get("chats", []):
+        if ch.get("type") == "channel" and ch.get("status") in ("admin", "member"):
+            return ch.get("chat_id")
+    return None
+
 async def publish_via_bot(bot_token, channel, text, media_paths, buttons=None):
     """
     Публикует пост с кнопками.
@@ -522,6 +587,23 @@ if __name__ == "__main__":
         posts_with_media = []
     else:
         last_processed = load_last_processed()
+
+    # ==================== MAX (кросспостинг) ====================
+    MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN')
+    MAX_CHAT_ID = os.getenv('MAX_CHAT_ID')
+    if MAX_BOT_TOKEN:
+        try:
+            MAX_CHAT_ID = asyncio.run(get_max_channel_chat_id(MAX_BOT_TOKEN))
+            if MAX_CHAT_ID:
+                print(f"📣 MAX активен: chat_id={MAX_CHAT_ID}")
+            else:
+                print("⚠️ MAX: бот не админ ни в одном канале, кросспостинг выключен")
+                MAX_BOT_TOKEN = None
+        except Exception as e:
+            print(f"⚠️ MAX init err: {e}"); MAX_BOT_TOKEN = None
+    else:
+        print("ℹ️ MAX_BOT_TOKEN не задан — кросспостинг в MAX выключен")
+
         print(f"Последние ID по каналам: {last_processed}")
         force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
         if force_full_repost:
@@ -651,6 +733,16 @@ if __name__ == "__main__":
                             ))
                             print(f"✅ Успешно опубликован пост {msg_id}")
                             break
+                            # 🔹 Кросспостинг в MAX (если настроен)
+                            if MAX_BOT_TOKEN and MAX_CHAT_ID:
+                                try:
+                                    asyncio.run(publish_via_max(
+                                        MAX_BOT_TOKEN, MAX_CHAT_ID,
+                                        caption_text, media_paths,
+                                        buttons=buttons
+                                    ))
+                                except Exception as e:
+                                    print(f"⚠️ MAX publish err: {e}")
                         except Exception as e:
                             error_msg = str(e)
                             if "Flood control" in error_msg and attempt < max_retries - 1:
@@ -712,6 +804,15 @@ if __name__ == "__main__":
                 media_paths=[],
                 buttons=fact_buttons
             ))
+            if MAX_BOT_TOKEN and MAX_CHAT_ID:
+                try:
+                    asyncio.run(publish_via_max(
+                        MAX_BOT_TOKEN, MAX_CHAT_ID,
+                        caption, media_paths=[],
+                        buttons=fact_buttons
+                    ))
+                except Exception as e:
+                    print(f"⚠️ MAX fact-пост err: {e}")
             print("✅ Факт-пост опубликован в Telegram")
             if not only_brand_fact:
                 set_last_brand_fact_date()
