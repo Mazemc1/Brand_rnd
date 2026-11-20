@@ -505,7 +505,8 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
                     print(f"⚠️ MAX PUT upload err {r2.status}"); return None
         return {"type": "photo", "photo": {"token": token}}
 
-    async with aiohttp.ClientSession() as session:
+    conn = aiohttp.TCPConnector(ssl=False)  # SSL off: Минцифры CA not in standard bundles
+    async with aiohttp.ClientSession(connector=conn) as session:
         attachments = []
         for mp in media_paths:
             att = await upload_photo(session, mp)
@@ -536,7 +537,8 @@ async def get_max_channel_chat_id(bot_token):
     """Находит chat_id первого канала, где бот админ."""
     import aiohttp
     BASE = "https://platform-api2.max.ru"
-    async with aiohttp.ClientSession() as session:
+    conn = aiohttp.TCPConnector(ssl=False)  # SSL off: Минцифры CA not in standard bundles
+    async with aiohttp.ClientSession(connector=conn) as session:
         async with session.get(f"{BASE}/chats", headers={"Authorization": bot_token}) as r:
             if r.status != 200:
                 print(f"⚠️ MAX /chats err {r.status}: {await r.text()}"); return None
