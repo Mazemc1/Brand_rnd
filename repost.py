@@ -604,8 +604,6 @@ if __name__ == "__main__":
     elif MAX_BOT_TOKEN:
         print("⚠️ MAX_BOT_TOKEN задан, но MAX_CHANNEL_ID нет — кросспостинг выключен")
         MAX_BOT_TOKEN = None
-    else:
-        print("ℹ️ MAX_BOT_TOKEN не задан — кросспостинг в MAX выключен")
 
 print(f"Последние ID по каналам: {last_processed}")
 force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
@@ -614,109 +612,109 @@ if force_full_repost:
 
 posts_with_media = []
 _session = StringSession(os.getenv('TELEGRAM_SESSION')) if os.getenv('TELEGRAM_SESSION') else SESSION_NAME
-        def _need_auth():
-            raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
+def _need_auth():
+    raise SystemExit("❌ Telegram-сессия не авторизована. Перевыпусти TELEGRAM_SESSION (python make_session.py) и обнови GitHub Secret.")
 
-        client = TelegramClient(_session, int(API_ID), API_HASH)
-        client.start(phone=_need_auth)
-        with client:
-            for entity in SOURCE_CHANNEL_ENTITIES:
-                last_id = last_processed.get(entity, 0)
-                if force_full_repost:
-                    print(f"🔄 Запрашиваю последние {MAX_MESSAGES_TO_CHECK} постов из {entity}")
-                    all_messages = list(client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK))
-                else:
-                    print(f"🔍 Проверяю {entity}, пропускаю ID ≤ {last_id}")
-                    all_messages = [msg for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK) if msg.id > last_id]
+client = TelegramClient(_session, int(API_ID), API_HASH)
+client.start(phone=_need_auth)
+with client:
+    for entity in SOURCE_CHANNEL_ENTITIES:
+        last_id = last_processed.get(entity, 0)
+        if force_full_repost:
+            print(f"🔄 Запрашиваю последние {MAX_MESSAGES_TO_CHECK} постов из {entity}")
+            all_messages = list(client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK))
+        else:
+            print(f"🔍 Проверяю {entity}, пропускаю ID ≤ {last_id}")
+            all_messages = [msg for msg in client.iter_messages(entity, limit=MAX_MESSAGES_TO_CHECK) if msg.id > last_id]
 
-                for msg in all_messages:
-                    if is_post_failed(entity, msg.id) or is_source_post_published(entity, msg.id):
-                        continue
-                    original_text = (msg.raw_text or "").strip()
-                    if not original_text:
-                        continue
+        for msg in all_messages:
+            if is_post_failed(entity, msg.id) or is_source_post_published(entity, msg.id):
+                continue
+            original_text = (msg.raw_text or "").strip()
+            if not original_text:
+                continue
 
-                    media_path = None
-                    if msg.media:
-                        try:
-                            path = client.download_media(msg.media, file=f"downloads/{msg.id}_media")
-                            if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
-                                media_path = path
-                        except Exception as e:
-                            print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
-
-                    posts_with_media.append({'entity': entity, 'msg_id': msg.id, 'text': original_text, 'media_path': media_path})
-                    print(f"✅ Найден НОВЫЙ пост {msg.id} в {entity}")
-
-        # Публикация товарных постов
-        if posts_with_media:
-            posts_with_media.sort(key=lambda x: x['msg_id'])
-            for i, item in enumerate(posts_with_media):
-                if i > 0:
-                    time.sleep(3)  # ⏱ Защита от flood control
-                
-                entity = item['entity']
-                msg_id = item['msg_id']
-                text = item['text']
-                media_path = item['media_path']
-
-                print(f"\n🔄 Публикую пост {msg_id} из {entity}")
+            media_path = None
+            if msg.media:
                 try:
-                    cleaned_text = remove_contacts(text)
-                    
-                    # 🔹 Вычисляем цену: оригинал + 1000₽
-                    final_price = extract_and_increase_price(cleaned_text)
-                    
-                    # 🔹 Генерация 2–3 хештегов (категория — только если товар понятен)
-                    hashtags = call_gigachat_for_hashtags(cleaned_text)
+                    path = client.download_media(msg.media, file=f"downloads/{msg.id}_media")
+                    if path and os.path.exists(path) and os.path.getsize(path) <= 10 * 1024 * 1024:
+                        media_path = path
+                except Exception as e:
+                    print(f"⚠️ Ошибка скачивания медиа для {msg.id}: {e}")
 
-                    # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
-                    detected_brand = None
-                    hashtags_lower = hashtags.lower()
-                    for brand, hashtag in BRAND_HASHTAGS.items():
-                        if f"#{hashtag}" in hashtags_lower:
-                            detected_brand = brand
-                            break
-                    if not detected_brand:
-                        cleaned_text_lower = cleaned_text.lower()
-                        for brand, hashtag in BRAND_HASHTAGS.items():
-                            brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
-                            if brand_clean in cleaned_text_lower:
-                                detected_brand = brand
-                                break
+            posts_with_media.append({'entity': entity, 'msg_id': msg.id, 'text': original_text, 'media_path': media_path})
+            print(f"✅ Найден НОВЫЙ пост {msg.id} в {entity}")
 
-                    # === ФОРМИРОВАНИЕ КАПШН С ЦЕНОЙ ===
-                    # 🔹 Добавляем цену в начало поста, если она найдена
-                    if final_price:
-                        formatted_price = f"{final_price:,}".replace(',', ' ')
-                        caption_text = f"💰 Цена: {formatted_price}₽\n\n{hashtags}"
-                    else:
-                        caption_text = hashtags
+# Публикация товарных постов
+if posts_with_media:
+    posts_with_media.sort(key=lambda x: x['msg_id'])
+    for i, item in enumerate(posts_with_media):
+        if i > 0:
+            time.sleep(3)  # ⏱ Защита от flood control
+        
+        entity = item['entity']
+        msg_id = item['msg_id']
+        text = item['text']
+        media_path = item['media_path']
 
-                    # === ФОРМИРОВАНИЕ КНОПОК ЗАКАЗА ===
-                    short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
-                    product_id = f"{short_code}-{msg_id}"
+        print(f"\n🔄 Публикую пост {msg_id} из {entity}")
+        try:
+            cleaned_text = remove_contacts(text)
+            
+            # 🔹 Вычисляем цену: оригинал + 1000₽
+            final_price = extract_and_increase_price(cleaned_text)
+            
+            # 🔹 Генерация 2–3 хештегов (категория — только если товар понятен)
+            hashtags = call_gigachat_for_hashtags(cleaned_text)
 
-                    # 🔹 Кнопка TG
-                    if TG_USE_START_PARAM:
-                        tg_button_url = f"{TG_MANAGER_URL}?start={product_id}"
-                    else:
-                        order_text = f"хочу заказать товар {product_id}\n{hashtags}"
-                        if final_price:
-                            order_text += f"\nЦена: {final_price} ₽"
-                        tg_button_url = f"{TG_MANAGER_URL}?text={urllib.parse.quote(order_text)}"
+            # === ОПРЕДЕЛЕНИЕ БРЕНДА ===
+            detected_brand = None
+            hashtags_lower = hashtags.lower()
+            for brand, hashtag in BRAND_HASHTAGS.items():
+                if f"#{hashtag}" in hashtags_lower:
+                    detected_brand = brand
+                    break
+            if not detected_brand:
+                cleaned_text_lower = cleaned_text.lower()
+                for brand, hashtag in BRAND_HASHTAGS.items():
+                    brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
+                    if brand_clean in cleaned_text_lower:
+                        detected_brand = brand
+                        break
 
-                    # 🔹 Кнопка MAX
-                    max_button_url = MAX_MANAGER_URL
-                    if "?product=" not in max_button_url and "&product=" not in max_button_url:
-                        separator = "?" if "?" not in max_button_url else "&"
-                        max_button_url = f"{max_button_url}{separator}product={product_id}"
+            # === ФОРМИРОВАНИЕ КАПШН С ЦЕНОЙ ===
+            # 🔹 Добавляем цену в начало поста, если она найдена
+            if final_price:
+                formatted_price = f"{final_price:,}".replace(',', ' ')
+                caption_text = f"💰 Цена: {formatted_price}₽\n\n{hashtags}"
+            else:
+                caption_text = hashtags
 
-                    # 🔹 Кнопки: короткие названия
-                    buttons = [
-                        ("🛒 TG", tg_button_url),
-                        ("⚡ MAX", max_button_url),
-                    ]
+            # === ФОРМИРОВАНИЕ КНОПОК ЗАКАЗА ===
+            short_code = CHANNEL_SHORTCODES.get(entity, entity[:2])
+            product_id = f"{short_code}-{msg_id}"
+
+            # 🔹 Кнопка TG
+            if TG_USE_START_PARAM:
+                tg_button_url = f"{TG_MANAGER_URL}?start={product_id}"
+            else:
+                order_text = f"хочу заказать товар {product_id}\n{hashtags}"
+                if final_price:
+                    order_text += f"\nЦена: {final_price} ₽"
+                tg_button_url = f"{TG_MANAGER_URL}?text={urllib.parse.quote(order_text)}"
+
+            # 🔹 Кнопка MAX
+            max_button_url = MAX_MANAGER_URL
+            if "?product=" not in max_button_url and "&product=" not in max_button_url:
+                separator = "?" if "?" not in max_button_url else "&"
+                max_button_url = f"{max_button_url}{separator}product={product_id}"
+
+            # 🔹 Кнопки: короткие названия
+            buttons = [
+                ("🛒 TG", tg_button_url),
+                ("⚡ MAX", max_button_url),
+            ]
 
                     # 🔹 УБРАНА ПОДСКАЗКА ПРО MAX!
                     # Больше не добавляем "💡 При заказе в MAX укажите код..."
