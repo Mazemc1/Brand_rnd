@@ -604,7 +604,6 @@ if __name__ == "__main__":
     elif MAX_BOT_TOKEN:
         print("⚠️ MAX_BOT_TOKEN задан, но MAX_CHANNEL_ID нет — кросспостинг выключен")
         MAX_BOT_TOKEN = None
-
 print(f"Последние ID по каналам: {last_processed}")
 force_full_repost = os.getenv('FORCE_FULL_REPOST') == '1'
 if force_full_repost:
@@ -716,57 +715,57 @@ if posts_with_media:
                 ("⚡ MAX", max_button_url),
             ]
 
-                    # 🔹 УБРАНА ПОДСКАЗКА ПРО MAX!
-                    # Больше не добавляем "💡 При заказе в MAX укажите код..."
+            # 🔹 УБРАНА ПОДСКАЗКА ПРО MAX!
+            # Больше не добавляем "💡 При заказе в MAX укажите код..."
 
-                    media_paths = [media_path] if media_path else []
+            media_paths = [media_path] if media_path else []
 
-                    # === ПУБЛИКАЦИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ ===
-                    max_retries = 3
-                    for attempt in range(max_retries):
+            # === ПУБЛИКАЦИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ ===
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    asyncio.run(publish_via_bot(
+                        BOT_TOKEN, 
+                        TARGET_CHANNEL, 
+                        caption_text,
+                        media_paths, 
+                        buttons=buttons
+                    ))
+                    print(f"✅ Успешно опубликован пост {msg_id}")
+                    break
+                    # 🔹 Кросспостинг в MAX (если настроен)
+                    if MAX_BOT_TOKEN and MAX_CHAT_ID:
                         try:
-                            asyncio.run(publish_via_bot(
-                                BOT_TOKEN, 
-                                TARGET_CHANNEL, 
-                                caption_text,
-                                media_paths, 
+                            asyncio.run(publish_via_max(
+                                MAX_BOT_TOKEN, MAX_CHAT_ID,
+                                caption_text, media_paths,
                                 buttons=buttons
                             ))
-                            print(f"✅ Успешно опубликован пост {msg_id}")
-                            break
-                            # 🔹 Кросспостинг в MAX (если настроен)
-                            if MAX_BOT_TOKEN and MAX_CHAT_ID:
-                                try:
-                                    asyncio.run(publish_via_max(
-                                        MAX_BOT_TOKEN, MAX_CHAT_ID,
-                                        caption_text, media_paths,
-                                        buttons=buttons
-                                    ))
-                                except Exception as e:
-                                    print(f"⚠️ MAX publish err: {e}")
                         except Exception as e:
-                            error_msg = str(e)
-                            if "Flood control" in error_msg and attempt < max_retries - 1:
-                                match = re.search(r"Retry in (\d+) seconds", error_msg)
-                                wait_time = int(match.group(1)) + 1 if match else 5
-                                print(f"⏳ Flood control, жду {wait_time}с (попытка {attempt+1}/{max_retries})")
-                                time.sleep(wait_time)
-                            else:
-                                raise
-
-                    if detected_brand:
-                        save_last_published_brand(detected_brand)
-                        print(f"🔖 Сохранён бренд: {detected_brand}")
-                    mark_source_post_as_published(entity, msg_id)
-                    save_last_processed(entity, msg_id)
-
+                            print(f"⚠️ MAX publish err: {e}")
                 except Exception as e:
-                    print(f"❌ Ошибка публикации {msg_id}: {e}")
-                    mark_post_as_failed(entity, msg_id)
+                    error_msg = str(e)
+                    if "Flood control" in error_msg and attempt < max_retries - 1:
+                        match = re.search(r"Retry in (\d+) seconds", error_msg)
+                        wait_time = int(match.group(1)) + 1 if match else 5
+                        print(f"⏳ Flood control, жду {wait_time}с (попытка {attempt+1}/{max_retries})")
+                        time.sleep(wait_time)
+                    else:
+                        raise
 
-            print(f"\n✅ Всего опубликовано постов: {len(posts_with_media)}")
-        else:
-            print("❌ Нет новых постов для публикации.")
+            if detected_brand:
+                save_last_published_brand(detected_brand)
+                print(f"🔖 Сохранён бренд: {detected_brand}")
+            mark_source_post_as_published(entity, msg_id)
+            save_last_processed(entity, msg_id)
+
+        except Exception as e:
+            print(f"❌ Ошибка публикации {msg_id}: {e}")
+            mark_post_as_failed(entity, msg_id)
+
+    print(f"\n✅ Всего опубликовано постов: {len(posts_with_media)}")
+else:
+    print("❌ Нет новых постов для публикации.")
 
     # ==================== ФАКТ-ПОСТЫ ====================
     force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
