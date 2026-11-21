@@ -497,91 +497,95 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
     """Публикация поста в MAX (фото + caption + inline-кнопки)."""
     import aiohttp
     BASE = "https://platform-api2.max.ru"
-    headers = {"Authorization": bot_token}
+    headers = {"Authorization": bot_token, "Accept": "application/json"}
 
     async def upload_photo(session, path):
-        # Согласно документации MAX API: POST /uploads с type в теле
-        async with session.post(f"{BASE}/uploads", headers=headers, json={"type": "photo"}) as r:
+        # Шаг 1: Получаем URL для загрузки
+        async with session.post(f"{BASE}/uploads?type=image", headers=headers) as r:
             if r.status != 200:
                 print(f"⚠️ MAX /uploads err {r.status}: {await r.text()}")
                 return None
             up = await r.json()
         
-        upload_url = up.get("url") or up.get("upload_url")
-        token = up.get("token")
-        
-        if not upload_url or not token:
-            print(f"⚠️ MAX /uploads: нет url/token в ответе: {up}")
+        upload_url = up.get("url")
+        if not upload_url:
+            print(f"⚠️ MAX /uploads: нет url в ответе: {up}")
             return None
         
-        # Загружаем файл
-        with open(path, "rb") as f:
-            async with session.put(upload_url, data=f, headers={"Content-Type": "image/jpeg"}) as r2:
-                if r2.status not in (200, 201, 204):
-                    print(f"⚠️ MAX PUT upload err {r2.status}: {await r2.text()}")
-                    return None
+        # Шаг 2: Загружаем файл через multipart/form-data
+        data = aiohttp.FormData()
+        data.add_field('data', open(path, 'rb'), filename='image.jpg', content_type='image/jpeg')
         
-        return {"type": "photo", "photo": {"token": token}}
+        async with session.post(upload_url, data=data) as r2:
+            if r2.status not in (200, 201, 204):
+                print(f"⚠️ MAX upload err {r2.status}: {await r2.text()}")
+                return None
+            result = await r2.json()
+        
+        # Извлекаем token из ответа
+        token = None
+        if "photos" in result:
+            for photo_id, photo_data in result["photos"].items():
+                token = photo_data.get("token")
+                if token:
+                    break
+        
+        if not token:
+            print(f"⚠️ MAX upload: нет token в ответе: {result}")
+            return None
+        
+        return token
 
     conn = aiohttp.TCPConnector(ssl=False)
     async with aiohttp.ClientSession(connector=conn) as session:
-        attachments = []
+        # Загружаем фото
+        photo_tokens = []
         if media_paths:
             for mp in media_paths:
-                att = await upload_photo(session, mp)
-                if att:
-                    attachments.append(att)
+                token = await upload_photo(session, mp)
+                if token:
+                    photo_tokens.append(token)
 
-        # Формируем inline keyboard
-        inline_keyboard = []
-        if buttons:
-            row = []
-            for label, url in buttons:
-                row.append({"text": label, "url": url})
-            inline_keyboard.append(row)
-
-        # Пробуем разные варианты chat_id
-        chat_id_str = str(channel_chat_id)
+        # Формируем attachments
+        attachments = []
+        for token in photo_tokens:
+            attachments.append({
+                "type": "image",
+                "payload": {"token": token}
+            })
         
-        # Формируем message
-        message = {"text": text}
+        # Добавляем inline keyboard
+        if buttons:
+            keyboard_buttons = []
+            for label, url in buttons:
+                keyboard_buttons.append({
+                    "type": "link",
+                    "text": label,
+                    "url": url
+                })
+            if keyboard_buttons:
+                attachments.append({
+                    "type": "inline_keyboard",
+                    "payload": {"buttons": [keyboard_buttons]}
+                })
+
+        # Формируем тело сообщения
+        body = {"text": text}
         if attachments:
-            message["attachments"] = attachments
-        if inline_keyboard:
-            message["inline_keyboard"] = inline_keyboard
+            body["attachments"] = attachments
 
-        # Пробуем два варианта структуры
-        # Вариант 1: recipient как объект
-        body1 = {
-            "recipient": {"chat_id": chat_id_str},
-            "message": message
-        }
-
-        async with session.post(f"{BASE}/messages", headers={**headers, "Content-Type": "application/json"}, json=body1) as r:
+        # Отправляем сообщение с chat_id в query parameter
+        async with session.post(
+            f"{BASE}/messages?chat_id={channel_chat_id}",
+            headers={**headers, "Content-Type": "application/json"},
+            json=body
+        ) as r:
             resp = await r.text()
             if r.status in (200, 201):
                 print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
                 return True
-            
-            # Если не сработало, пробуем вариант 2: chat_id напрямую
-            body2 = {
-                "chat_id": chat_id_str,
-                "text": text
-            }
-            if attachments:
-                body2["attachments"] = attachments
-            if inline_keyboard:
-                body2["inline_keyboard"] = inline_keyboard
-
-            async with session.post(f"{BASE}/messages", headers={**headers, "Content-Type": "application/json"}, json=body2) as r2:
-                resp2 = await r2.text()
-                if r2.status in (200, 201):
-                    print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
-                    return True
-                
-                print(f"⚠️ MAX /messages err (оба варианта не сработали):")
-                print(f"  Вариант 1: {r.status} - {resp[:200]}")
-                print(f"  Вариант 2: {r2.status} - {resp2[:200]}")
+            else:
+                print(f"⚠️ MAX /messages err {r.status}: {resp[:300]}")
                 return False
 
 
