@@ -497,31 +497,41 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
     """Публикация поста в MAX (фото + caption + inline-кнопки)."""
     import aiohttp
     BASE = "https://platform-api2.max.ru"
-    headers = {"Authorization": bot_token, "Content-Type": "application/json"}
+    headers = {"Authorization": bot_token}
 
     async def upload_photo(session, path):
-        # 1) получить upload_url
-        async with session.post(f"{BASE}/uploads", headers=headers, json={"type": "photo"}) as r:
+        # 1) GET запрос для получения upload_url с параметром type
+        async with session.get(f"{BASE}/uploads", headers=headers, params={"type": "photo"}) as r:
             if r.status != 200:
-                print(f"⚠️ MAX /uploads err {r.status}: {await r.text()}"); return None
+                print(f"⚠️ MAX /uploads err {r.status}: {await r.text()}")
+                return None
             up = await r.json()
-        upload_url = up.get("upload_url")
+        
+        # Пробуем разные варианты полей
+        upload_url = up.get("url") or up.get("upload_url")
         token = up.get("token")
+        
         if not upload_url or not token:
-            print("⚠️ MAX /uploads: нет upload_url/token"); return None
-        # 2) PUT файл
+            print(f"⚠️ MAX /uploads: нет url/token в ответе: {up}")
+            return None
+        
+        # 2) PUT файл на upload_url
         with open(path, "rb") as f:
-            async with session.put(upload_url, data=f) as r2:
+            async with session.put(upload_url, data=f, headers={"Content-Type": "image/jpeg"}) as r2:
                 if r2.status not in (200, 201, 204):
-                    print(f"⚠️ MAX PUT upload err {r2.status}"); return None
+                    print(f"⚠️ MAX PUT upload err {r2.status}: {await r2.text()}")
+                    return None
+        
         return {"type": "photo", "photo": {"token": token}}
 
     conn = aiohttp.TCPConnector(ssl=False)  # SSL off: Минцифры CA not in standard bundles
-    async with aiohttp.ClientSession(connector=conn) as session:
+    async with aiohttp.ClientSession(connector=conn, headers=headers) as session:
         attachments = []
-        for mp in media_paths:
-            att = await upload_photo(session, mp)
-            if att: attachments.append(att)
+        if media_paths:
+            for mp in media_paths:
+                att = await upload_photo(session, mp)
+                if att:
+                    attachments.append(att)
 
         # inline_keyboard: [[{text, url}]]
         inline_keyboard = []
@@ -531,17 +541,27 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
                 row.append({"text": label, "url": url})
             inline_keyboard.append(row)
 
-        body = {"chat_id": channel_chat_id, "text": text}
-        if attachments: body["attachments"] = attachments
-        if inline_keyboard: body["inline_keyboard"] = inline_keyboard
+        # Формируем message body
+        message = {"text": text}
+        if attachments:
+            message["attachments"] = attachments
+        if inline_keyboard:
+            message["inline_keyboard"] = inline_keyboard
 
-        async with session.post(f"{BASE}/messages", headers=headers, json=body) as r:
+        # Правильная структура для MAX API: recipient + message
+        body = {
+            "recipient": {"chat_id": int(channel_chat_id)},
+            "message": message
+        }
+
+        async with session.post(f"{BASE}/messages", json=body) as r:
             resp = await r.text()
             if r.status in (200, 201):
                 print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
                 return True
-            print(f"⚠️ MAX /messages err {r.status}: {resp[:200]}")
+            print(f"⚠️ MAX /messages err {r.status}: {resp[:300]}")
             return False
+
 
 
 async def get_max_channel_chat_id(bot_token):
