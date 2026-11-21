@@ -500,14 +500,13 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
     headers = {"Authorization": bot_token}
 
     async def upload_photo(session, path):
-        # 1) GET запрос для получения upload_url с параметром type
-        async with session.get(f"{BASE}/uploads", headers=headers, params={"type": "photo"}) as r:
+        # Согласно документации MAX API: POST /uploads с type в теле
+        async with session.post(f"{BASE}/uploads", headers=headers, json={"type": "photo"}) as r:
             if r.status != 200:
                 print(f"⚠️ MAX /uploads err {r.status}: {await r.text()}")
                 return None
             up = await r.json()
         
-        # Пробуем разные варианты полей
         upload_url = up.get("url") or up.get("upload_url")
         token = up.get("token")
         
@@ -515,7 +514,7 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
             print(f"⚠️ MAX /uploads: нет url/token в ответе: {up}")
             return None
         
-        # 2) PUT файл на upload_url
+        # Загружаем файл
         with open(path, "rb") as f:
             async with session.put(upload_url, data=f, headers={"Content-Type": "image/jpeg"}) as r2:
                 if r2.status not in (200, 201, 204):
@@ -524,8 +523,8 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
         
         return {"type": "photo", "photo": {"token": token}}
 
-    conn = aiohttp.TCPConnector(ssl=False)  # SSL off: Минцифры CA not in standard bundles
-    async with aiohttp.ClientSession(connector=conn, headers=headers) as session:
+    conn = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(connector=conn) as session:
         attachments = []
         if media_paths:
             for mp in media_paths:
@@ -533,7 +532,7 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
                 if att:
                     attachments.append(att)
 
-        # inline_keyboard: [[{text, url}]]
+        # Формируем inline keyboard
         inline_keyboard = []
         if buttons:
             row = []
@@ -541,26 +540,49 @@ async def publish_via_max(bot_token, channel_chat_id, text, media_paths, buttons
                 row.append({"text": label, "url": url})
             inline_keyboard.append(row)
 
-        # Формируем message body
+        # Пробуем разные варианты chat_id
+        chat_id_str = str(channel_chat_id)
+        
+        # Формируем message
         message = {"text": text}
         if attachments:
             message["attachments"] = attachments
         if inline_keyboard:
             message["inline_keyboard"] = inline_keyboard
 
-        # Правильная структура для MAX API: recipient + message
-        body = {
-            "recipient": {"chat_id": int(channel_chat_id)},
+        # Пробуем два варианта структуры
+        # Вариант 1: recipient как объект
+        body1 = {
+            "recipient": {"chat_id": chat_id_str},
             "message": message
         }
 
-        async with session.post(f"{BASE}/messages", json=body) as r:
+        async with session.post(f"{BASE}/messages", headers={**headers, "Content-Type": "application/json"}, json=body1) as r:
             resp = await r.text()
             if r.status in (200, 201):
                 print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
                 return True
-            print(f"⚠️ MAX /messages err {r.status}: {resp[:300]}")
-            return False
+            
+            # Если не сработало, пробуем вариант 2: chat_id напрямую
+            body2 = {
+                "chat_id": chat_id_str,
+                "text": text
+            }
+            if attachments:
+                body2["attachments"] = attachments
+            if inline_keyboard:
+                body2["inline_keyboard"] = inline_keyboard
+
+            async with session.post(f"{BASE}/messages", headers={**headers, "Content-Type": "application/json"}, json=body2) as r2:
+                resp2 = await r2.text()
+                if r2.status in (200, 201):
+                    print(f"✅ MAX опубликован: chat_id={channel_chat_id}")
+                    return True
+                
+                print(f"⚠️ MAX /messages err (оба варианта не сработали):")
+                print(f"  Вариант 1: {r.status} - {resp[:200]}")
+                print(f"  Вариант 2: {r2.status} - {resp2[:200]}")
+                return False
 
 
 
