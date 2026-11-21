@@ -732,7 +732,7 @@ if posts_with_media:
                         buttons=buttons
                     ))
                     print(f"✅ Успешно опубликован пост {msg_id}")
-                    break
+                    
                     # 🔹 Кросспостинг в MAX (если настроен)
                     if MAX_BOT_TOKEN and MAX_CHAT_ID:
                         try:
@@ -741,8 +741,11 @@ if posts_with_media:
                                 caption_text, media_paths,
                                 buttons=buttons
                             ))
+                            print(f"✅ MAX: пост {msg_id} опубликован")
                         except Exception as e:
                             print(f"⚠️ MAX publish err: {e}")
+                    
+                    break
                 except Exception as e:
                     error_msg = str(e)
                     if "Flood control" in error_msg and attempt < max_retries - 1:
