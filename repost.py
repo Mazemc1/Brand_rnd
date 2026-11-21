@@ -183,6 +183,11 @@ def load_last_processed():
                     for key in data:
                         data[key] = max(0, data[key] - 100)
                     print(f"🔄 RESET_STATE: сбросил last_processed на 100 постов назад: {data}")
+                    
+                    # Очищаем published_source_posts.txt для теста кросспостинга
+                    if os.path.exists(PUBLISHED_SOURCE_POSTS_FILE):
+                        open(PUBLISHED_SOURCE_POSTS_FILE, 'w').close()
+                        print(f"🧹 RESET_STATE: очистил {PUBLISHED_SOURCE_POSTS_FILE}")
                 return data
         except Exception as e:
             print(f"⚠️ Ошибка загрузки {LAST_PROCESSED_FILE}: {e}")
