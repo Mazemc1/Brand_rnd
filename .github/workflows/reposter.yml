@@ -2,7 +2,8 @@ name: Reposter
 
 on:
   schedule:
-    - cron: '0 6,11,16 * * *'  # UTC → Москва: 9, 14, 19
+    - cron: '0 9,14,19 * * *'
+      timezone: 'Europe/Moscow'
   workflow_dispatch:
     inputs:
       only_brand_fact:
@@ -65,6 +66,7 @@ jobs:
             published_source_posts.txt
             facts_history.json
             last_published_brand.txt
+            brands_extra.json
           key: reposter-state-${{ github.run_id }}
           restore-keys: |
             reposter-state-
@@ -98,4 +100,5 @@ jobs:
             published_source_posts.txt
             facts_history.json
             last_published_brand.txt
+            brands_extra.json
           if-no-files-found: ignore
