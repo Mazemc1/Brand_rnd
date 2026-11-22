@@ -7,7 +7,7 @@ import re
 import os
 import asyncio
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from telethon.sync import TelegramClient
 from telethon.sessions import StringSession
@@ -95,13 +95,42 @@ BRAND_HASHTAGS = {
     'Benetton': 'benetton',
     'Max Mara': 'maxmara',
     'Furla': 'furla',
+    'Coccinelle': 'coccinelle',
     "Tod's": 'tods',
     'Salvatore Ferragamo': 'ferragamo',
 }
 
 BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
+BRANDS_EXTRA_FILE = 'brands_extra.json'
+
+def _load_extra_brands():
+    if os.path.exists(BRANDS_EXTRA_FILE):
+        try:
+            with open(BRANDS_EXTRA_FILE, 'r', encoding='utf-8') as f:
+                for display, slug in json.load(f).items():
+                    BRAND_HASHTAGS.setdefault(display, slug)
+        except Exception as e:
+            print(f"⚠️ brands_extra: {e}")
+
+_load_extra_brands()
+BRAND_FACTS_TOPICS = list(BRAND_HASHTAGS.keys())
+
+def register_brand(display, slug):
+    """Авто-добавление нового бренда в словарь (grounded, из текста)."""
+    BRAND_HASHTAGS[display] = slug
+    extra = {}
+    if os.path.exists(BRANDS_EXTRA_FILE):
+        try:
+            with open(BRANDS_EXTRA_FILE, 'r', encoding='utf-8') as f:
+                extra = json.load(f)
+        except Exception:
+            extra = {}
+    extra[display] = slug
+    with open(BRANDS_EXTRA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(extra, f, ensure_ascii=False, indent=2)
+    print(f"🆕 Новый бренд добавлен в словарь: {display} -> #{slug}")
 BRAND_FACT_LAST_POST_FILE = 'last_brand_fact_post.txt'
-BRAND_FACT_INTERVAL_DAYS = 3
+BRAND_FACT_INTERVAL_DAYS = 1
 LAST_PUBLISHED_BRAND_FILE = 'last_published_brand.txt'
 FACTS_HISTORY_FILE = 'facts_history.json'
 MAX_FACTS_HISTORY = 50
@@ -152,7 +181,8 @@ GIGACHAT_PROMPT_TEMPLATE = """
 2. Второй хештег: категория товара — выбери ОДИН из: #обувь #одежда #очки #сумка #аксессуары.
    Если по описанию НЕЛЬЗЯ уверенно определить категорию — ПРОПУСТИ этот хештег совсем.
    ЗАПРЕЩЕНО писать #товар и любые категории вне списка. Не угадывай наугад.
-3. Третий хештег: бренд — используй ТОЛЬКО из списка: {allowed_hashtags}.
+3. Третий хештег: бренд — если ты УВЕРЕННО узнаёшь бренд В ТЕКСТЕ, напиши его латинским slug-хештегом (маленькие буквы, без пробелов), например #coccinelle #nike.
+   Можно использовать бренды вне списка, но ТОЛЬКО если название бренда реально присутствует в тексте.
    Если бренд не распознан — пропусти его, не выдумывай.
 
 Формат: 2 или 3 хештега через пробел, начиная с решётки. Никаких пояснений.
@@ -375,60 +405,106 @@ def detect_availability(text):
     else:
         return "#доставка"
 
+BRAND_ALIASES = {
+    'nike': ['найк'], 'adidas': ['адидас', 'адик'], 'puma': ['пума'],
+    'reebok': ['рибок', 'рибук'], 'zara': ['зара'], 'gucci': ['гуччи', 'гучи'],
+    'prada': ['прада'], 'chanel': ['шанель'], 'dior': ['диор'],
+    'burberry': ['бербери', 'берберри'], 'versace': ['версаче', 'версачи'],
+    'armani': ['армани'], 'calvinklein': ['кельвинкляйн'],
+    'tommyhilfiger': ['томмихилфигер'], 'ralphlauren': ['ральфлорен', 'ральфлаурен'],
+    'karllagerfeld': ['карллагерфельд'], 'michaelkors': ['майклкорс'],
+    'coach': ['коуч'], 'guess': ['гесс'], 'diesel': ['дизель'],
+    'northface': ['норсфейс'], 'balenciaga': ['баленсиага'],
+    'coccinelle': ['кошинель', 'коччинелле'], 'furla': ['фурла'], 'maxmara': ['максмара'],
+}
+STOP_WORDS = {'the','and','for','with','size','original','available','sale','new','hot',
+              'top','best','price','rub','usd','eur','delivery','shop','store','brand',
+              'fashion','style','luxury','premium','quality','men','women','unisex','order','stock','free'}
+
+def _norm_text(s):
+    return re.sub(r'[^a-zа-я0-9]', '', (s or '').lower())
+
+def brand_from_text(text):
+    """Бренд, реально упомянутый в тексте (канонический тег из словаря/алиасов)."""
+    t = _norm_text(text)
+    if not t:
+        return None
+    for brand, tag in BRAND_HASHTAGS.items():
+        nb = _norm_text(brand)
+        if nb and nb in t:
+            return f"#{tag}"
+        for a in BRAND_ALIASES.get(tag, []):
+            if a in t:
+                return f"#{tag}"
+    return None
+
+def has_product_signal(text):
+    """Есть ли в тексте признаки товара (а не только цена/эмодзи)."""
+    t = (text or '').lower()
+    if detect_category(text) or brand_from_text(text):
+        return True
+    if any(w not in STOP_WORDS for w in re.findall(r'[a-z]{3,}', t)):
+        return True
+    if re.search(r'\b\d{2}(?:[.,]5)?\s*(?:eu|us|uk|ru)\b', t):
+        return True
+    if re.search(r'(?:размер|size)\s*[:\-]?\s*(?:xs|s|m|l|xl|xxl|\d{2})\b', t):
+        return True
+    return False
+
 def call_gigachat_for_hashtags(text: str) -> str:
     """
-    Генерирует 2–3 хештега:
-    1. #в_наличии или #доставка
-    2. Категория (#обувь/#одежда/#очки/#сумка/#аксессуары) — только если товар понятен
-    3. Бренд
-    Если категорию определить не удалось, хештег категории (в т.ч. #товар) НЕ ставится.
+    Grounding-гейт: теги ставим ТОЛЬКО если есть основание в тексте.
+    - категория: из ИИ или ключевых слов, но лишь при has_product_signal
+    - бренд: канонический из словаря/алиасов; ИИ-бренд принимаем только если он
+      реально встречается в тексте; новый grounded-бренд авто-добавляется в словарь
+    - пустой текст (цена+эмодзи) -> только #доставка / #в_наличии
     """
     availability = detect_availability(text)
-
-    def brand_from_text():
-        text_lower = text.lower()
-        for brand, tag in BRAND_HASHTAGS.items():
-            brand_clean = brand.lower().replace('’', '').replace('&', '').replace('.', '')
-            if brand_clean in text_lower:
-                return f"#{tag}"
-        return None
-
+    signal = has_product_signal(text)
+    known_brand = brand_from_text(text)
+    ai_raw = ''
+    ai_category = None
+    ai_brand = None
     try:
         prompt = GIGACHAT_PROMPT_TEMPLATE.format(text=text)
-        response = call_gigachat(prompt=prompt, model=MODEL_HASHTAGS, max_tokens=80, temperature=0.2)
-        all_hashtags = [h.lower().strip('.,!;:') for h in re.findall(r'#\S+', response)]
-
-        # 🔹 Категория — из ответа ИИ, строго из разрешённого списка
-        category = next((h for h in all_hashtags if h in ALLOWED_CATEGORIES), None)
-        if not category:
-            category = detect_category(text)  # запасной вариант: ключевые слова
-
-        # 🔹 Бренд — из ответа ИИ
-        brand_hashtag = None
-        for hashtag in all_hashtags:
-            for brand, tag in BRAND_HASHTAGS.items():
-                if f"#{tag}" == hashtag or tag in hashtag:
-                    brand_hashtag = f"#{tag}"
-                    break
-            if brand_hashtag:
-                break
-        if not brand_hashtag:
-            brand_hashtag = brand_from_text()
-        if not brand_hashtag:
-            brand_hashtag = "#бренд"  # fallback
-
+        ai_raw = call_gigachat(prompt=prompt, model=MODEL_HASHTAGS, max_tokens=80, temperature=0.2)
+        tags = [h.lower().strip('.,!;:') for h in re.findall(r'#\S+', ai_raw)]
+        ai_category = next((h for h in tags if h in ALLOWED_CATEGORIES), None)
+        for h in tags:
+            if h in ALLOWED_CATEGORIES or h in ('#в_наличии', '#доставка'):
+                continue
+            ai_brand = h.lstrip('#')
+            break
     except Exception as e:
         print(f"⚠️ GigaChat (хештеги) ошибка: {e}")
-        # Fallback без ИИ: только ключевые слова, без #товар
-        category = detect_category(text)
-        brand_hashtag = brand_from_text() or "#бренд"
 
-    # 🔹 Собираем финальные хештеги: категория — только если определена
+    # grounding ИИ-бренда: принимаем только если название есть в тексте
+    grounded_ai = None
+    if ai_brand:
+        nb = _norm_text(ai_brand)
+        if nb and nb in _norm_text(text):
+            grounded_ai = ai_brand
+            for tag, aliases in BRAND_ALIASES.items():
+                if grounded_ai == tag or grounded_ai in aliases:
+                    grounded_ai = tag
+                    break
+    brand_tag = known_brand
+    if not brand_tag and grounded_ai:
+        if grounded_ai in BRAND_HASHTAGS.values():
+            brand_tag = f"#{grounded_ai}"
+        else:
+            register_brand(grounded_ai.capitalize(), grounded_ai)
+            brand_tag = f"#{grounded_ai}"
+
+    category = (ai_category or detect_category(text)) if signal else None
     parts = [availability]
     if category:
         parts.append(category)
-    parts.append(brand_hashtag)
-    return " ".join(parts)
+    if brand_tag:
+        parts.append(brand_tag)
+    result = ' '.join(parts)
+    print(f"🏷 {result} | сигнал={signal} | ИИ: {ai_raw.strip()!r}")
+    return result
 
 def generate_brand_fact(brand_name: str) -> str:
     """Генерирует УНИКАЛЬНЫЙ факт о бренде с защитой от повторов"""
@@ -639,6 +715,11 @@ if __name__ == "__main__":
             raise EnvironmentError(f"❌ Переменная окружения {var} не задана!")
 
     os.makedirs('downloads', exist_ok=True)
+    # 🕒 Публикуем только днём по МСК (08:00-22:00); ночью пропуск даже если cron опоздал
+    _now_msk = datetime.now(timezone(timedelta(hours=3)))
+    if not (8 <= _now_msk.hour < 22):
+        print(f"🌙 {_now_msk:%H:%M} МСК — ночь, публикация пропущена (окно 08:00-22:00)")
+        raise SystemExit(0)
     only_brand_fact = os.getenv('ONLY_BRAND_FACT') == '1'
 
     if only_brand_fact:
@@ -821,55 +902,55 @@ if posts_with_media:
 else:
     print("❌ Нет новых постов для публикации.")
 
-    # ==================== ФАКТ-ПОСТЫ ====================
-    force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
-    last_fact_date = get_last_brand_fact_date()
-    now = datetime.now()
-    should_post_fact = force_fact or last_fact_date is None or (now - last_fact_date) >= timedelta(days=BRAND_FACT_INTERVAL_DAYS)
+# ==================== ФАКТ-ПОСТЫ ====================
+force_fact = os.getenv('FORCE_BRAND_FACT') == '1' or only_brand_fact
+last_fact_date = get_last_brand_fact_date()
+now = datetime.now()
+should_post_fact = force_fact or last_fact_date is None or (now - last_fact_date) >= timedelta(days=BRAND_FACT_INTERVAL_DAYS)
 
-    if should_post_fact:
-        print("🔄 Планируется публикация факт-поста о бренде...")
-        brand = load_last_published_brand()
-        if not brand or brand not in BRAND_HASHTAGS:
-            brand = random.choice(BRAND_FACTS_TOPICS)
-            print(f"⚠️ Последний бренд не найден, используем случайный: {brand}")
-        else:
-            print(f"🧠 Факт-пост о бренде: {brand}")
+if should_post_fact:
+    print("🔄 Планируется публикация факт-поста о бренде...")
+    brand = load_last_published_brand()
+    if not brand or brand not in BRAND_HASHTAGS:
+        brand = random.choice(BRAND_FACTS_TOPICS)
+        print(f"⚠️ Последний бренд не найден, используем случайный: {brand}")
+    else:
+        print(f"🧠 Факт-пост о бренде: {brand}")
 
-        fact_text = generate_brand_fact(brand)
-        brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and').replace('’', ''))
-        caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
-        print(f"📤 Публикуем факт-пост: {caption[:60]}...")
+    fact_text = generate_brand_fact(brand)
+    brand_hashtag = BRAND_HASHTAGS.get(brand, brand.lower().replace(' ', '').replace('&', 'and').replace('’', ''))
+    caption = f"✨ {fact_text}\n\n#мода #бренды #{brand_hashtag} #fact"
+    print(f"📤 Публикуем факт-пост: {caption[:60]}...")
 
-        time.sleep(5)
+    time.sleep(5)
 
-        # Кнопки для факт-поста
-        brand_for_search = urllib.parse.quote(brand)
-        fact_buttons = [
-            ("🛒 TG", f"{TG_MANAGER_URL}?text=Хочу%20посмотреть%20товары%20{brand_for_search}"),
-            ("⚡ MAX", f"{MAX_MANAGER_URL}?search={brand_for_search}"),
-        ]
+    # Кнопки для факт-поста
+    brand_for_search = urllib.parse.quote(brand)
+    fact_buttons = [
+        ("🛒 TG", f"{TG_MANAGER_URL}?text=Хочу%20посмотреть%20товары%20{brand_for_search}"),
+        ("⚡ MAX", f"{MAX_MANAGER_URL}?search={brand_for_search}"),
+    ]
 
-        try:
-            asyncio.run(publish_via_bot(
-                BOT_TOKEN, 
-                TARGET_CHANNEL, 
-                caption, 
-                media_paths=[],
-                buttons=fact_buttons
-            ))
-            if MAX_BOT_TOKEN and MAX_CHAT_ID:
-                try:
-                    asyncio.run(publish_via_max(
-                        MAX_BOT_TOKEN, MAX_CHAT_ID,
-                        caption, media_paths=[],
-                        buttons=fact_buttons
-                    ))
-                except Exception as e:
-                    print(f"⚠️ MAX fact-пост err: {e}")
-            print("✅ Факт-пост опубликован в Telegram")
-            if not only_brand_fact:
-                set_last_brand_fact_date()
-            print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
-        except Exception as e:
-            print(f"⚠️ Факт-пост не опубликован: {e}")
+    try:
+        asyncio.run(publish_via_bot(
+            BOT_TOKEN, 
+            TARGET_CHANNEL, 
+            caption, 
+            media_paths=[],
+            buttons=fact_buttons
+        ))
+        if MAX_BOT_TOKEN and MAX_CHAT_ID:
+            try:
+                asyncio.run(publish_via_max(
+                    MAX_BOT_TOKEN, MAX_CHAT_ID,
+                    caption, media_paths=[],
+                    buttons=fact_buttons
+                ))
+            except Exception as e:
+                print(f"⚠️ MAX fact-пост err: {e}")
+        print("✅ Факт-пост опубликован в Telegram")
+        if not only_brand_fact:
+            set_last_brand_fact_date()
+        print(f"✅ Успешно опубликован факт-пост о бренде: {brand}")
+    except Exception as e:
+        print(f"⚠️ Факт-пост не опубликован: {e}")
