@@ -451,6 +451,18 @@ def has_product_signal(text):
         return True
     return False
 
+def _category_evidence(text):
+    """Не-брендовые признаки категории: размеры обуви/одежды или модель (латинские токены вне брендов)."""
+    t = (text or '').lower()
+    if re.search(r'\b\d{2}(?:[.,]5)?\s*(?:eu|us|uk|ru)\b', t):
+        return True
+    if re.search(r'(?:размер|size)\s*[:\-]?\s*(?:xs|s|m|l|xl|xxl|\d{2})\b', t):
+        return True
+    brandset = set(BRAND_HASHTAGS.values()) | {_norm_text(b) for b in BRAND_HASHTAGS}
+    brandset |= {a for als in BRAND_ALIASES.values() for a in als}
+    toks = [w for w in re.findall(r'[a-z]{3,}', t) if w not in STOP_WORDS]
+    return any(w not in brandset for w in toks)
+
 def call_gigachat_for_hashtags(text: str) -> str:
     """
     Grounding-гейт: теги ставим ТОЛЬКО если есть основание в тексте.
@@ -496,7 +508,13 @@ def call_gigachat_for_hashtags(text: str) -> str:
             register_brand(grounded_ai.capitalize(), grounded_ai)
             brand_tag = f"#{grounded_ai}"
 
-    category = (ai_category or detect_category(text)) if signal else None
+    kw_cat = detect_category(text)
+    if kw_cat:
+        category = kw_cat
+    elif ai_category and _category_evidence(text):
+        category = ai_category
+    else:
+        category = None
     parts = [availability]
     if category:
         parts.append(category)
